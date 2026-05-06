@@ -84,12 +84,12 @@
         app:rippleColor="#459C27B0"
         android:layout_margin="10dp"
         app:cardCornerRadius="15dp">
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="30dp"
             android:layout_height="30dp"
             android:layout_margin="10dp"
             android:src="@drawable/web"
-            android:tint="#9C27B0"
+            app:tint="#9C27B0"
             />
 
         <TextView
@@ -234,12 +234,12 @@
             app:rippleColor="#FF6F00"
             android:layout_margin="10dp"
             app:cardCornerRadius="15dp">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="30dp"
                 android:layout_height="30dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/coins"
-                android:tint="@color/yellow"
+                app:tint="@color/yellow"
                 />
 
             <TextView

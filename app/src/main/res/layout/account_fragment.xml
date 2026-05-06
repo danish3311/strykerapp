@@ -117,12 +117,12 @@
         app:rippleColor="#459C27B0"
         android:layout_margin="10dp"
         app:cardCornerRadius="15dp">
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="30dp"
             android:layout_height="30dp"
             android:layout_margin="10dp"
             android:src="@drawable/web"
-            android:tint="#9C27B0"
+            app:tint="#9C27B0"
             />
 
         <TextView
@@ -239,12 +239,12 @@
         android:orientation="horizontal"
         android:gravity="center"
         android:layout_height="wrap_content">
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="18dp"
             android:layout_height="18dp"
             android:src="@drawable/verified"
             android:visibility="gone"
-            android:tint="@color/blue2"
+            app:tint="@color/blue2"
             android:id="@+id/verified"
             />
     </LinearLayout>
@@ -301,12 +301,12 @@
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:src="@drawable/ethereum"
                 android:layout_margin="5dp"
-                android:tint="@color/grey"
+                app:tint="@color/grey"
                 />
             <TextView
                 android:layout_width="wrap_content"

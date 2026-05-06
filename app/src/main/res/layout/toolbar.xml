@@ -271,11 +271,11 @@ android:id="@+id/menu_expand">
                 android:layout_margin="5dp"
                 android:layout_height="60dp"
                 android:focusable="true">
-                <ImageView
+                <androidx.appcompat.widget.AppCompatImageView
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:src="@drawable/msf"
-                    android:tint="@color/grey"
+                    app:tint="@color/grey"
                     android:layout_margin="8dp"
                     />
 

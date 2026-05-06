@@ -50,12 +50,12 @@
 
     </LinearLayout>
 
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/next_screen"
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:src="@drawable/next"
-        android:tint="@color/white"
+        app:tint="@color/white"
         android:layout_marginBottom="25dp"
         android:layout_gravity="right"
         android:background="@drawable/circle"

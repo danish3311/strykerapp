@@ -38,6 +38,7 @@ import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.utils.CheckDir;
 import com.zalexdev.stryker.utils.Core;
 import com.zalexdev.stryker.utils.CustomCommand;
+import com.zalexdev.stryker.utils.AssetFiles;
 
 import java.io.File;
 import java.io.FileFilter;
@@ -54,6 +55,8 @@ public class Slide3 extends Fragment {
     public Activity activity;
     public ViewPager mPager;
     public int click = 0;
+    private static final String ASSET_CORE_32 = "chroots/chroot32.tar.gz";
+    private static final String ASSET_CORE_64 = "chroots/chroot64.tar.gz";
     public Slide3(ViewPager p){
         mPager = p;
     }
@@ -95,18 +98,14 @@ public class Slide3 extends Fragment {
             new Thread(() -> {
                 clear();
                 boolean core_ok;
-                if (core.is64Bit()){
-                    core_ok = download("https://github.com/stryker-project/stryker-chroot/releases/download/2.0R/Stryker2R.tar.gz", "stryker.tar.gz", progress_status, progress);
-                }else {
-                    core_ok = download("https://github.com/stryker-project/stryker-chroot/releases/download/2.0R/Stryker2R-32bit.tar.gz", "stryker.tar.gz", progress_status, progress);
-                }
+                core_ok = obtainCoreTarGz(progress_status, progress, "stryker.tar.gz");
                 if (core_ok) {
                     setText(title, core.str("install_unpack"), true);
                     setInter(progress, true);
                     setText(title, core.str("install3"), true);
                     if (unTarFile(core.getStorage() + "Download/stryker.tar.gz")){
                         setText(title, core.str("success"), true);
-                        new CustomCommand("mkdir /data/local/stryker/release/modules&&mkdir /data/local/stryker/release/exploits&&mkdir /storage/emulated/0/Stryker/modules&&&&mkdir /storage/emulated/0/Stryker/explots&&mkdir /storage/emulated/0/Stryker/wordlists&&mkdir /storage/emulated/0/Stryker/hs&&mkdir /storage/emulated/0/Stryker/captured",core).execute();
+                        new CustomCommand("mkdir /data/local/stryker/release/modules&&mkdir /data/local/stryker/release/exploits&&mkdir /storage/emulated/0/Stryker/modules&&mkdir /storage/emulated/0/Stryker/exploits&&mkdir /storage/emulated/0/Stryker/wordlists&&mkdir /storage/emulated/0/Stryker/hs&&mkdir /storage/emulated/0/Stryker/captured",core).execute();
                     }else{
                         setText(title, getString(R.string.failed_try), true);
                     }
@@ -123,6 +122,28 @@ public class Slide3 extends Fragment {
             }).start();
         });
         return view;
+    }
+
+    private boolean obtainCoreTarGz(TextView status, LinearProgressIndicator progress, String outName) {
+        String asset = core.is64Bit() ? ASSET_CORE_64 : ASSET_CORE_32;
+        File dst = new File(core.getStorage() + "Download/" + outName);
+
+        if (AssetFiles.assetExists(context, asset)) {
+            try {
+                setText(status, "Copying bundled core...", false);
+                setProg(progress, 1);
+                AssetFiles.copyAssetToFile(context, asset, dst);
+                return dst.exists() && dst.length() > 0;
+            } catch (Exception ignored) {
+                // fallback to download
+            }
+        }
+
+        if (core.is64Bit()){
+            return download("https://github.com/stryker-project/stryker-chroot/releases/download/2.0R/Stryker2R.tar.gz", outName, status, progress);
+        } else {
+            return download("https://github.com/stryker-project/stryker-chroot/releases/download/2.0R/Stryker2R-32bit.tar.gz", outName, status, progress);
+        }
     }
 
     public void changecolor(boolean red,LinearLayout layout){

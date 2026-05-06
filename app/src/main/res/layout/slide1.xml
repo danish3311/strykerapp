@@ -6,12 +6,12 @@
     android:gravity="center"
     android:background="#3F51B5"
     android:layout_height="match_parent">
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/slide_img"
         android:layout_width="150dp"
         android:layout_height="150dp"
         android:src="@drawable/bolt"
-        android:tint="@color/white"
+        app:tint="@color/white"
         android:padding="30dp"
         android:background="@drawable/circle"
         android:backgroundTint="#2196F3"

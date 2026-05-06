@@ -44,12 +44,12 @@
             android:layout_margin="10dp"
             android:orientation="horizontal"
             android:layout_height="wrap_content">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="16dp"
                 android:layout_height="16dp"
                 android:layout_gravity="center_vertical"
                 android:src="@drawable/folder"
-                android:tint="#606060"/>
+                app:tint="#606060"/>
             <TextView
                 android:id="@+id/ew_exploit_path"
                 android:layout_width="match_parent"
@@ -123,12 +123,12 @@
         />
     </LinearLayout>
 
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/ew_next"
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:src="@drawable/next"
-        android:tint="@color/white"
+        app:tint="@color/white"
         android:layout_marginBottom="25dp"
         android:layout_gravity="right"
         android:background="@drawable/circle"

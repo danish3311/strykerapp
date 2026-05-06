@@ -34,7 +34,7 @@
           android:layout_height="match_parent"
           android:src="@drawable/run"
           android:layout_weight="8"
-          android:tint="@color/blue2"/>
+          app:tint="@color/blue2"/>
    </LinearLayout>
 
 <com.google.android.material.textview.MaterialTextView

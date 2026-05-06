@@ -91,21 +91,21 @@
                 android:layout_height="match_parent"
                 android:gravity="center"
                 android:orientation="horizontal">
-                <ImageView
+                <androidx.appcompat.widget.AppCompatImageView
                     android:id="@+id/router_save"
                     android:layout_width="30dp"
                     android:layout_height="30dp"
                     android:layout_marginEnd="5dp"
                     android:src="@drawable/save"
-                    android:tint="@color/grey"
+                    app:tint="@color/grey"
                     />
-                <ImageView
+                <androidx.appcompat.widget.AppCompatImageView
                     android:id="@+id/router_settings_icon"
                     android:layout_width="30dp"
                     android:layout_height="30dp"
 
                     android:src="@drawable/settings"
-                    android:tint="@color/grey"
+                    app:tint="@color/grey"
                     />
             </LinearLayout>
 
@@ -127,7 +127,7 @@
 
         android:id="@+id/router_toggle"
         >
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:id="@+id/router_toggle_img"
             android:layout_width="match_parent"
             android:layout_height="30dp"
@@ -135,7 +135,7 @@
             android:src="@drawable/arrow_down"
             android:layout_gravity="center"
             android:rotation="180"
-            android:tint="#606060"
+            app:tint="#606060"
             />
     </LinearLayout>
     <androidx.recyclerview.widget.RecyclerView
@@ -184,11 +184,11 @@
             android:layout_marginStart="5dp"
             android:text="..."
             android:layout_weight="1" />
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@drawable/circle"
-            android:tint="@color/green"/>
+            app:tint="@color/green"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -196,12 +196,12 @@
             android:text="0"
             android:layout_marginLeft="5dp"
             />
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@drawable/circle"
             android:layout_marginLeft="5dp"
-            android:tint="@color/red"/>
+            app:tint="@color/red"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

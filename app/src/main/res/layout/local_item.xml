@@ -39,13 +39,13 @@
             android:id="@+id/port_layout"
             android:orientation="vertical">
 
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:id="@+id/local_icon"
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_marginLeft="10dp"
                 android:layout_marginTop="5dp"
-                android:tint="#606060"
+                app:tint="#606060"
                 android:src="@drawable/devices_local"
                 />
 
@@ -85,40 +85,40 @@
         android:textSize="15dp"
         android:gravity="center"
         android:textStyle="bold" />
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/img_1"
         android:layout_width="15dp"
         android:layout_height="15dp"
         android:visibility="gone"
-        android:tint="#606060"
+        app:tint="#606060"
         android:layout_marginStart="10dp"/>
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/img_2"
         android:layout_width="15dp"
         android:layout_height="15dp"
         android:visibility="gone"
-        android:tint="#606060"
+        app:tint="#606060"
         android:layout_marginStart="5dp"/>
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/img_3"
         android:layout_width="15dp"
         android:layout_height="15dp"
         android:visibility="gone"
-        android:tint="#606060"
+        app:tint="#606060"
         android:layout_marginStart="5dp"/>
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/img_4"
         android:layout_width="15dp"
         android:layout_height="15dp"
         android:visibility="gone"
-        android:tint="#606060"
+        app:tint="#606060"
         android:layout_marginStart="5dp"/>
-    <ImageView
+    <androidx.appcompat.widget.AppCompatImageView
         android:id="@+id/img_5"
         android:layout_width="15dp"
         android:layout_height="15dp"
         android:visibility="gone"
-        android:tint="#606060"
+        app:tint="#606060"
         android:layout_marginStart="5dp"/>
 </LinearLayout>
     <TextView

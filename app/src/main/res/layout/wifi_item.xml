@@ -69,12 +69,12 @@
         android:layout_height="wrap_content"
         android:layout_marginLeft="4dp"
          />
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="15dp"
             android:layout_height="15dp"
             android:layout_marginLeft="5dp"
             android:src="@drawable/store"
-            android:tint="#606060"
+            app:tint="#606060"
          android:visibility="gone"
             android:id="@+id/icon_wifi"
             />

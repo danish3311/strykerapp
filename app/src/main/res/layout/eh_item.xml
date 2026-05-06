@@ -29,11 +29,11 @@
         android:orientation="horizontal"
         android:baselineAligned="false">
 
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="5dp"
                 android:layout_height="50dp"
                 android:layout_marginLeft="10dp"
-                android:tint="#4CAF50"
+                app:tint="#4CAF50"
                 android:src="@drawable/rectangle"
                 />
 

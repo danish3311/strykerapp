@@ -41,12 +41,12 @@
         app:cardElevation="6dp"
         app:rippleColor="#4A006064">
 
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="50dp"
             android:layout_height="50dp"
             android:layout_margin="10dp"
             android:src="@drawable/interface_scan"
-            android:tint="#006064" />
+            app:tint="#006064" />
 
         <TextView
             android:layout_width="match_parent"
@@ -86,12 +86,12 @@
         app:cardElevation="6dp"
         app:rippleColor="#4FE65100">
 
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="50dp"
             android:layout_height="50dp"
             android:layout_margin="10dp"
             android:src="@drawable/interface_deauth"
-            android:tint="#C54500" />
+            app:tint="#C54500" />
 
         <TextView
             android:layout_width="match_parent"
@@ -136,12 +136,12 @@
         android:layout_margin="10dp"
         app:cardCornerRadius="15dp">
 
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="50dp"
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/noof"
-            android:tint="#6200EA" />
+            app:tint="#6200EA" />
 
         <TextView
             android:layout_width="match_parent"
@@ -179,12 +179,12 @@
         android:layout_margin="10dp"
         app:cardCornerRadius="15dp">
 
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="50dp"
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/update"
-            android:tint="#1B5E20" />
+            app:tint="#1B5E20" />
 
         <TextView
             android:layout_width="match_parent"
@@ -228,12 +228,12 @@
         android:layout_margin="10dp"
         app:cardCornerRadius="15dp">
 
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="50dp"
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/wifi3"
-            android:tint="#33691E" />
+            app:tint="#33691E" />
 
         <TextView
             android:layout_width="match_parent"
@@ -271,12 +271,12 @@
         android:layout_margin="10dp"
         app:cardCornerRadius="15dp">
 
-        <ImageView
+        <androidx.appcompat.widget.AppCompatImageView
             android:layout_width="50dp"
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/store"
-            android:tint="#B19A23" />
+            app:tint="#B19A23" />
 
         <TextView
             android:layout_width="match_parent"
@@ -323,12 +323,12 @@
             app:rippleColor="#01579B"
             android:layout_margin="10dp"
             app:cardCornerRadius="15dp">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/night_mode"
-                android:tint="#01579B"
+                app:tint="#01579B"
                 />
 
             <TextView
@@ -365,12 +365,12 @@
             app:rippleColor="#4A5E35B1"
             android:layout_margin="10dp"
             app:cardCornerRadius="15dp">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/hidemac"
-                android:tint="#4A148C"
+                app:tint="#4A148C"
                 />
 
             <TextView
@@ -416,12 +416,12 @@
             app:rippleColor="#90686868"
             android:layout_margin="10dp"
             app:cardCornerRadius="15dp">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/debug"
-                android:tint="#717171"
+                app:tint="#717171"
                 />
 
             <TextView
@@ -456,12 +456,12 @@
             app:rippleColor="#4A35B1AD"
             android:layout_margin="10dp"
             app:cardCornerRadius="15dp">
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/module"
-                android:tint="#32AABA"
+                app:tint="#32AABA"
                 />
 
             <TextView
@@ -507,12 +507,12 @@
             app:cardElevation="6dp"
             app:rippleColor="#4A006064">
 
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/unmount"
-                android:tint="#880E4F" />
+                app:tint="#880E4F" />
 
             <TextView
                 android:layout_width="match_parent"
@@ -552,12 +552,12 @@
             app:cardElevation="6dp"
             app:rippleColor="#4FE65100">
 
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:layout_width="50dp"
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/delete"
-                android:tint="#B71C1C" />
+                app:tint="#B71C1C" />
 
             <TextView
                 android:layout_width="match_parent"

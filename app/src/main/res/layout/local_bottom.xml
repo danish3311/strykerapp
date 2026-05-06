@@ -220,13 +220,13 @@
                 android:focusable="true"
                 android:background="?attr/selectableItemBackground"
                 android:orientation="horizontal">
-                <ImageView
+                <androidx.appcompat.widget.AppCompatImageView
                     android:layout_width="30dp"
                     android:layout_gravity="center"
                     android:layout_marginRight="10dp"
                     android:layout_marginLeft="10dp"
                     android:src="@drawable/run"
-                    android:tint="@color/grey"
+                    app:tint="@color/grey"
                     android:layout_height="30dp"/>
 
                 <TextView

@@ -56,14 +56,14 @@
                 android:layout_gravity="center_vertical"
                 android:src="@drawable/account" />
 
-            <ImageView
+            <androidx.appcompat.widget.AppCompatImageView
                 android:id="@+id/settings_icon"
                 android:layout_width="35dp"
                 android:layout_height="35dp"
                 android:layout_gravity="center_vertical"
                 android:layout_marginStart="12dp"
                 android:src="@drawable/settings"
-                android:tint="@color/grey" />
+                app:tint="@color/grey" />
         </LinearLayout>
 
         <net.cachapa.expandablelayout.ExpandableLayout
@@ -241,11 +241,11 @@
                             android:focusable="true"
                             app:cardCornerRadius="15dp">
 
-                            <ImageView
+                            <androidx.appcompat.widget.AppCompatImageView
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
-                                android:tint="@color/grey"
+                                app:tint="@color/grey"
                                 android:src="@drawable/exploithub" />
 
 
@@ -275,11 +275,11 @@
                             android:focusable="true"
                             app:cardCornerRadius="15dp">
 
-                            <ImageView
+                            <androidx.appcompat.widget.AppCompatImageView
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
-                                android:tint="@color/grey"
+                                app:tint="@color/grey"
                                 android:src="@drawable/scanner" />
 
 
@@ -415,12 +415,12 @@
                             android:focusable="true"
                             app:cardCornerRadius="15dp">
 
-                            <ImageView
+                            <androidx.appcompat.widget.AppCompatImageView
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/msf"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>
@@ -486,12 +486,12 @@
                             android:focusable="true"
                             app:cardCornerRadius="15dp">
 
-                            <ImageView
+                            <androidx.appcompat.widget.AppCompatImageView
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/three_wifi_database"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>
@@ -522,12 +522,12 @@
                             android:focusable="true"
                             app:cardCornerRadius="15dp">
 
-                            <ImageView
+                            <androidx.appcompat.widget.AppCompatImageView
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/geo"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>
@@ -558,12 +558,12 @@
                             android:focusable="true"
                             app:cardCornerRadius="15dp">
 
-                            <ImageView
+                            <androidx.appcompat.widget.AppCompatImageView
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/router"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>

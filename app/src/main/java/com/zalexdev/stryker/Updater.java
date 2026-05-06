@@ -32,6 +32,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.concurrent.ExecutionException;
 
+import com.zalexdev.stryker.utils.AssetFiles;
+
 /**
  * This class is used to update the application
  */
@@ -53,6 +55,8 @@ public class Updater extends Fragment {
     public String urlapk;
     public String urlchroot32;
     public String urlchroot64;
+    private static final String ASSET_CHROOT_32 = "chroots/chroot32.tar.gz";
+    private static final String ASSET_CHROOT_64 = "chroots/chroot64.tar.gz";
     public MaterialButton renew;
     public Updater(String a,String c,String cc){
         urlapk  = a;
@@ -111,7 +115,7 @@ public class Updater extends Fragment {
             if (apk) {
                 setProg(progress, 10);
                 setText(status, core.str("download_chroot"));
-                boolean chroot = download(urlchroot,"stryker-chroot.tar.gz",status,progress);
+                boolean chroot = obtainChrootTarGz(urlchroot, "stryker-chroot.tar.gz", status, progress);
                 if (chroot) {
                     setProg(progress, 30);
                     setText(status, core.str("unmount"));
@@ -152,6 +156,23 @@ public class Updater extends Fragment {
             e.printStackTrace();
         }
 
+    }
+
+    private boolean obtainChrootTarGz(String url, String name, TextView status, LinearProgressIndicator progress) {
+        // Offline-first: if chroot tarball is bundled as an asset, use it.
+        String asset = core.is64Bit() ? ASSET_CHROOT_64 : ASSET_CHROOT_32;
+        File dst = new File("/storage/emulated/0/Download/" + name);
+        if (AssetFiles.assetExists(context, asset)) {
+            try {
+                setText(status, "Copying bundled chroot...", false);
+                setProg(progress, 1);
+                AssetFiles.copyAssetToFile(context, asset, dst);
+                return dst.exists() && dst.length() > 0;
+            } catch (IOException ignored) {
+                // fallback to download
+            }
+        }
+        return download(url, name, status, progress);
     }
 
     public boolean unmount() throws ExecutionException, InterruptedException {
