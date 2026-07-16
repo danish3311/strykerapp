@@ -866,21 +866,21 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
     setRequestedOrientation(Globals.HorizontalOrientation ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
   }
 
-  @Override
-  public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+ @Override
+public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     if (permissions.length == 0 || grantResults.length == 0) {
-      Log.i("SDL", "libSDL: Permission request dialog was aborted");
-      return;
+        Log.i("SDL", "libSDL: Permission request dialog was aborted");
+        return;
     }
     if (Manifest.permission.RECORD_AUDIO.equals(permissions[0])) {
-      Log.i("SDL", "libSDL: Record audio permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
+        Log.i("SDL", "libSDL: Record audio permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
     }
     if (Manifest.permission.WRITE_EXTERNAL_STORAGE.equals(permissions[0])) {
-      Log.i("SDL", "libSDL: Write external storage permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
-      writeExternalStoragePermissionDialogAnswered = true;
+        Log.i("SDL", "libSDL: Write external storage permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
+        writeExternalStoragePermissionDialogAnswered = true;
     }
-  }
-
+}
   public void setSystemMousePointerVisible(int visible) {
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
       mGLView.setPointerIcon(android.view.PointerIcon.getSystemIcon(this, (visible == 0) ? android.view.PointerIcon.TYPE_NULL : android.view.PointerIcon.TYPE_DEFAULT));
