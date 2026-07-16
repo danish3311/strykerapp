@@ -161,6 +161,14 @@ class AudioThread {
         mRecorder.release();
       mRecorder = null;
       try {
+        // Check RECORD_AUDIO permission before creating AudioRecord
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+          if (mClient.getContext().checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+              != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.i("SDL", "SDL: error: RECORD_AUDIO permission not granted!");
+            return null;
+          }
+        }
         mRecorder = new AudioRecord(AudioSource.MIC, rate, channelConfig, encodingConfig, minBufferSize);
         mRecorderBufferSize = minBufferSize;
       } catch (IllegalArgumentException e) {
