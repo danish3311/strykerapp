@@ -854,105 +854,18 @@ public class Wifi extends Fragment {
     }
 
     public void runDeauth() {
-        final Dialog dialog = new Dialog(context);
-        dialog.setContentView(R.layout.wifi_dialog_hs);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        CharSequence[] labels = new CharSequence[WifiJamFragment.MODES.length];
+        for (int i = 0; i < WifiJamFragment.MODES.length; i++) {
+            labels[i] = WifiJamFragment.MODES[i].title;
         }
-        dialog.setCancelable(false);
-
-        View outputcard = dialog.findViewById(R.id.output_card);
-        TextView outputtext = dialog.findViewById(R.id.wifi_output);
-        TextView resulttext = dialog.findViewById(R.id.wifi_result);
-        MaterialButton stop = dialog.findViewById(R.id.stop);
-        TextView title = dialog.findViewById(R.id.scan_text);
-        title.setText("Deauthenticating");
-        MaterialCardView info_card = dialog.findViewById(R.id.info_card);
-        info_card.setVisibility(View.GONE);
-        outputtext.setMovementMethod(new ScrollingMovementMethod());
-        outputtext.append("Starting monitor mode on " + core.getString("wlan_deauth") + "...\n");
-        new Thread(() -> {
-            // Use prefs name (wlan0) for airmon/con_mode, then resolved name for mdk4.
-            // Mass deauth hops channels via mdk4 — no single-channel lock (unlike aireplay).
-            String deauthRaw = core.getString("wlan_deauth");
-            if (deauthRaw == null || deauthRaw.isEmpty()) {
-                deauthRaw = core.getDeauthInterface();
-            }
-            if (core.monitorManager.enableMonitorMode(deauthRaw)) {
-                String deauthIface = core.getDeauthInterface();
-                safeUi(() -> outputtext.append("Monitor ready on " + deauthIface + " (mdk4 channel hop)\n"));
-                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + deauthIface + " d", true) {
-
-                    @Override
-                    protected void onPrepare() {
-                        if (isAdded() && alive.get()) {
-                            outputtext.append("Success");
-                        }
-                        super.onPrepare();
-                    }
-
-                    @Override
-                    public void onFinished(ArrayList<String> outputList) {
-                        core.toaster("Mdk4 stopped");
-                        if (isAdded() && alive.get()) {
-                            outputcard.setVisibility(View.GONE);
-                            resulttext.setVisibility(View.VISIBLE);
-                            resulttext.setText("Attack stopped");
-                        }
-                    }
-
-                    @Override
-                    public void onNewLine(String line) {
-                        if (!isAdded() || !alive.get()) {
-                            return;
-                        }
-                        if (line.contains("Packets sent")) {
-                            outputtext.setText("");
-                        }
-                        if (core.getBoolean("hide")) {
-                            Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
-                            if (m.find()) {
-                                line = line.replace(m.group(), Core.HIDDEN_MAC);
-                            }
-                        }
-                        outputtext.append(line + "\n");
-                        smoothScrool(outputtext);
-                    }
-
-                    @Override
-                    public void onEvent(String line) {
-
-                    }
-                };
-            } else {
-                safeUi(() -> {
-                    core.toaster("Mdk4 stopped");
-                    outputcard.setVisibility(View.GONE);
-                    resulttext.setVisibility(View.VISIBLE);
-                    resulttext.setText("Attack stopped, failed to start monitor mode");
-                });
-
-            }
-        }).start();
-
-        stop.setOnClickListener(v -> {
-            if (mdk4 != null) {
-                mdk4.kill();
-            }
-            if (airodump != null) {
-                airodump.kill();
-
-            }
-            new Thread(() -> core.monitorManager.disableMonitorMode(core.getDeauthInterface())).start();
-            stop.setVisibility(View.GONE);
-            dialog.setCancelable(true);
-            outputcard.setVisibility(View.GONE);
-            resulttext.setVisibility(View.VISIBLE);
-            resulttext.setText("Attack stopped");
-        });
-        dialog.show();
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("mdk4 mode")
+                .setItems(labels, (d, which) -> {
+                    WifiJamFragment.Mode mode = WifiJamFragment.MODES[which];
+                    WifiJamFragment.launchMdk4(activity, context, core, mode.flag, mode.title);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     public void smoothScrool(TextView outputtext) {

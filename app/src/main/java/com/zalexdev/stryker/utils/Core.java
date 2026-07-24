@@ -363,15 +363,14 @@ public class Core {
     }
 
     public Exploit getExploitByTitle(String title){
-        Exploit t = new Exploit();
+        if (title == null) return null;
         ArrayList<Exploit> exploits = getExploits();
         for (Exploit e: exploits){
-            if (e.getTitle().equals(title)){
-                t = e;
-                break;
+            if (e != null && title.equals(e.getTitle())){
+                return e;
             }
         }
-        return t;
+        return null;
     }
     public void updateExploits(){
         deleteFile("/data/local/stryker/release/exploits");
@@ -403,6 +402,8 @@ public class Core {
         for (String e : exploits){
             list.add(unparseExploit(e));
         }
+        // Seed defaults into both prefs and the returned list (previously save-only
+        // so the first "Check known vulns" run saw empty Exploit objects).
         if (!exploits.toString().contains("EternalBlue")){
             Exploit eternal = new Exploit();
             eternal.setTitle("EternalBlue");
@@ -412,6 +413,7 @@ public class Core {
             eternal.setSuccesspatern("VUNLFOUNDED");
             eternal.setLang("Python");
             saveExploit(eternal);
+            list.add(eternal);
         }
         if (!exploits.toString().contains("SMBGhost")){
             Exploit ghost = new Exploit();
@@ -422,6 +424,7 @@ public class Core {
             ghost.setSuccesspatern("VUNLFOUNDED");
             ghost.setLang("Python");
             saveExploit(ghost);
+            list.add(ghost);
         }
         if (!exploits.toString().contains("Bluekeep")){
             Exploit blue = new Exploit();
@@ -432,6 +435,7 @@ public class Core {
             blue.setSuccesspatern("VULNERABLE");
             blue.setLang("Python");
             saveExploit(blue);
+            list.add(blue);
         }
         if (!exploits.toString().contains("CVE-2022-27255")){
             Exploit cve = new Exploit();
@@ -442,6 +446,7 @@ public class Core {
             cve.setSuccesspatern("Target vulnerable");
             cve.setLang("Python");
             saveExploit(cve);
+            list.add(cve);
         }
         return list;
     }
@@ -544,6 +549,7 @@ public class Core {
                 deleteFile("/data/local/stryker/release/msfpc");
                 deleteFile("/data/local/stryker/release/usr/bin/msfvenom");
                 putBoolean("msf", false);
+                putBoolean("msf_autostart", false);
                 break;
             case "nuclei":
                 deleteFile("/data/local/stryker/release/usr/bin/nuclei");

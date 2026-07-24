@@ -79,44 +79,52 @@
             android:textSize="11sp"
             android:textStyle="bold" />
 
-        <com.google.android.material.chip.ChipGroup
-            android:id="@+id/nuclei_severity_group"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:chipSpacingHorizontal="6dp"
-            app:singleLine="true"
-            app:singleSelection="true"
-            app:selectionRequired="true">
+            android:scrollbars="none"
+            android:fadeScrollbars="true"
+            android:overScrollMode="ifContentScrolls">
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/nuclei_sev_info"
-                style="@style/Widget.Material3.Chip.Filter"
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/nuclei_severity_group"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:checked="true"
-                android:text="Info+" />
+                app:chipSpacingHorizontal="6dp"
+                app:singleLine="true"
+                app:singleSelection="true"
+                app:selectionRequired="true">
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/nuclei_sev_low"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Low+" />
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/nuclei_sev_info"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:text="Info+" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/nuclei_sev_medium"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Medium+" />
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/nuclei_sev_low"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Low+" />
 
-            <com.google.android.material.chip.Chip
-                android:id="@+id/nuclei_sev_high"
-                style="@style/Widget.Material3.Chip.Filter"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="High+" />
-        </com.google.android.material.chip.ChipGroup>
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/nuclei_sev_medium"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Medium+" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/nuclei_sev_high"
+                    style="@style/Widget.Material3.Chip.Filter"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="High+" />
+            </com.google.android.material.chip.ChipGroup>
+        </HorizontalScrollView>
 
         <LinearLayout
             android:layout_width="match_parent"

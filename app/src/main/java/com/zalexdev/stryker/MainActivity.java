@@ -56,6 +56,7 @@ import com.zalexdev.stryker.hid.ui.HidFragment;
 import com.zalexdev.stryker.usbarsenal.ui.UsbArsenalFragment;
 import com.zalexdev.stryker.vnc.VNCFragment;
 import com.zalexdev.stryker.wifi.Wifi;
+import com.zalexdev.stryker.wifi.WifiJamFragment;
 import com.zalexdev.stryker.wpair.WpairFragment;
 
 import java.io.File;
@@ -142,7 +143,8 @@ public class MainActivity extends AppCompatActivity {
                                 new Thread(() -> core.getInterfacesList()).start();
                             }
                             new Thread(() -> {
-                                if (core != null && core.getBoolean("msf")) {
+                                if (core != null && core.getBoolean("msf_autostart")
+                                        && core.isToolInstalled("metasploit")) {
                                     metasploitUtils = new MetasploitUtils(MainActivity.this, MainActivity.this);
                                 }
                                 assert core != null;
@@ -156,7 +158,8 @@ public class MainActivity extends AppCompatActivity {
                                 schedulePromo();
                                 checkForUsb();
                                 new Thread(() -> {
-                                    if (core != null && core.getBoolean("msf")) {
+                                    if (core != null && core.getBoolean("msf_autostart")
+                                            && core.isToolInstalled("metasploit")) {
                                         metasploitUtils = new MetasploitUtils(MainActivity.this, MainActivity.this);
                                     }
                                 }).start();
@@ -651,6 +654,7 @@ public class MainActivity extends AppCompatActivity {
 
         private static Fragment fragmentFor(int itemId) {
             if (itemId == R.id.wifi_item) return new Wifi();
+            if (itemId == R.id.wifi_jam_item) return new WifiJamFragment();
             if (itemId == R.id.lan_item) return new LocalMain();
             if (itemId == R.id.macchanger_item) return new MACChangerFragment();
             if (itemId == R.id.dasboard_item) return new Dashboard();
@@ -706,6 +710,7 @@ public class MainActivity extends AppCompatActivity {
         m.put(R.id.dasboard_item,     new DrawerSpec("Dashboard",        R.drawable.home,        0xFF1565C0));
         m.put(R.id.terminal_item,     new DrawerSpec("Terminal",         R.drawable.terminal,    0xFF1565C0));
         m.put(R.id.wifi_item,         new DrawerSpec("WiFi networks",    R.drawable.wifi,        0xFF1565C0));
+        m.put(R.id.wifi_jam_item,     new DrawerSpec("WiFi jamming",     R.drawable.wifi,        0xFFC62828));
         m.put(R.id.hs_item,           new DrawerSpec("Handshakes",       R.drawable.storage,     0xFF00897B));
         m.put(R.id.macchanger_item,   new DrawerSpec("MAC changer",      R.drawable.password,    0xFF1565C0));
         m.put(R.id.router_scan_item,  new DrawerSpec("Router scan",      R.drawable.router,      0xFF2E7D32));

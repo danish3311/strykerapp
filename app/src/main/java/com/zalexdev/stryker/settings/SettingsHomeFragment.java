@@ -110,8 +110,10 @@ public class SettingsHomeFragment extends Fragment {
         LinearLayout msfAutostartRow = view.findViewById(R.id.msf_autostart_row);
         LinearLayout msfStopRow = view.findViewById(R.id.msf_stop_row);
         SwitchMaterial msfAutostart = view.findViewById(R.id.msf_autostart_switch);
-        msfAutostart.setChecked(core.getBoolean("msf"));
-        msfAutostart.setOnCheckedChangeListener((btn, b) -> core.putBoolean("msf", b));
+        // Installed flag is "msf"; autostart is separate so toggling off startup
+        // does not mark Metasploit as uninstalled (and install does not force boot).
+        msfAutostart.setChecked(core.getBoolean("msf_autostart"));
+        msfAutostart.setOnCheckedChangeListener((btn, b) -> core.putBoolean("msf_autostart", b));
         bindRowToSwitch(msfAutostartRow, msfAutostart);
         msfStopRow.setOnClickListener(v -> stopMetasploit());
 

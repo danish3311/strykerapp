@@ -166,6 +166,10 @@
             layout="@layout/drawer_row" />
 
         <include
+            android:id="@+id/wifi_jam_item"
+            layout="@layout/drawer_row" />
+
+        <include
             android:id="@+id/hs_item"
             layout="@layout/drawer_row" />
 

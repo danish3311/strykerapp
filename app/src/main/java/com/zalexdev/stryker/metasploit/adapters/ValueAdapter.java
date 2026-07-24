@@ -85,6 +85,13 @@ public class ValueAdapter extends RecyclerView.Adapter<ValueAdapter.ViewHolder> 
         } else if (argument.getName().equals("RHOSTS") || argument.getName().equals("RHOST")) {
             arguments.get(position).setAuto(core.getLatestIps());
             if (ip != null && h.value.getText().length() == 0) h.value.setText(ip);
+        } else if (argument.getName().equalsIgnoreCase("SESSION")) {
+            // MSF defaults SESSION to -1 (unset). Leave blank so the user picks a real id.
+            String cur = argument.getValue() == null ? "" : argument.getValue().trim();
+            if (cur.equals("-1") || cur.isEmpty()) {
+                h.value.setText("");
+                h.value.setHint("session id (not -1)");
+            }
         }
         if (argument.getAuto().size() > 0) {
             h.value.setAdapter(new ArrayAdapter<>(context,

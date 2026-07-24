@@ -27,11 +27,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
+    public static final String ENGINE_AIRCRACK = "aircrack";
+    public static final String ENGINE_HASHCAT = "hashcat";
+
     public String exec = Core.EXECUTE;
     public String path;
     public String wordlist;
@@ -39,27 +43,30 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     public Activity activity;
     public TextView progress;
     public TextView time;
+    public TextView liveLog;
     public Context context;
     public int id;
     public Process process;
     public Logger logger;
+    public String engine = ENGINE_AIRCRACK;
 
     public BruteHandshake(String p, String w, Core c, Activity a, Context con, TextView pr, TextView t, int i) {
+        this(p, w, c, a, con, pr, t, null, i, ENGINE_AIRCRACK);
+    }
+
+    public BruteHandshake(String p, String w, Core c, Activity a, Context con,
+                          TextView pr, TextView t, TextView log, int i, String engine) {
         core = c;
         path = p;
         wordlist = w;
         activity = a;
         progress = pr;
         time = t;
+        liveLog = log;
         context = con;
         id = i;
+        this.engine = engine == null ? ENGINE_AIRCRACK : engine;
         logger = new Logger();
-    }
-
-    @Override
-    protected void onPreExecute() {
-        super.onPreExecute();
-
     }
 
     @SuppressLint("WrongThread")
@@ -67,27 +74,23 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     protected WiFINetwork doInBackground(Void... command) {
         String line;
         WiFINetwork result = new WiFINetwork();
-        logger.writeLine("Starting brute handshake",1);
+        logger.writeLine("Starting brute handshake (" + engine + ")", 1);
         try {
             process = Runtime.getRuntime().exec("su");
             OutputStream stdin = process.getOutputStream();
             InputStream stderr = process.getErrorStream();
             InputStream stdout = process.getInputStream();
-            stdin.write((exec + "'aircrack-ng -w/sdcard/Stryker/wordlists/" + wordlist + " /sdcard/Stryker/captured/" + path + " '" + '\n').getBytes());
+            stdin.write((buildCommand() + '\n').getBytes());
             stdin.flush();
             stdin.close();
 
             BufferedReader br = new BufferedReader(new InputStreamReader(stdout));
             while ((line = br.readLine()) != null) {
-
-                logger.writeLine(line,2);
+                logger.writeLine(line, 2);
                 onProgressUpdate(line);
-                if (line.contains("KEY FOUND! [ ")) {
-                    Pattern pattern = Pattern.compile("\\[ (.*?)\\]");
-                    Matcher matcher = pattern.matcher(line);
-                    if (matcher.find()) {
-                        result.setPsk(matcher.group(1));
-                    }
+                if (lineContainsKey(line)) {
+                    String key = extractKey(line);
+                    if (key != null) result.setPsk(key);
                     result.setOK(true);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         CreateNotification("Success", "Password found: " + result.getPsk(), 100, 100);
@@ -97,14 +100,20 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
             br.close();
             br = new BufferedReader(new InputStreamReader(stderr));
             while ((line = br.readLine()) != null) {
-
-                logger.writeLine(line,3);
+                logger.writeLine(line, 3);
+                onProgressUpdate(line);
+                if (lineContainsKey(line)) {
+                    String key = extractKey(line);
+                    if (key != null) result.setPsk(key);
+                    result.setOK(true);
+                }
             }
             br.close();
             process.waitFor();
             process.destroy();
 
         } catch (IOException | InterruptedException e) {
+            // ignore
         }
         if (!result.getOK()) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -114,11 +123,42 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
         return result;
     }
 
-    @Override
-    protected void onPostExecute(WiFINetwork result) {
-        super.onPostExecute(result);
+    private String buildCommand() {
+        // Paths are already /sdcard/... relative forms from the adapter.
+        String cap = path.startsWith("/") ? path : "/sdcard/Stryker/captured/" + path;
+        String wl = wordlist.startsWith("/") ? wordlist : "/sdcard/Stryker/wordlists/" + wordlist;
+        if (ENGINE_HASHCAT.equals(engine)) {
+            // Convert .cap → .hccapx inside chroot when needed, then run hashcat -m 2500.
+            return exec + "'bash -lc \"set -e; "
+                    + "CAP=" + shellQuote(cap) + "; WL=" + shellQuote(wl) + "; "
+                    + "OUT=/tmp/stryker_hs.hccapx; "
+                    + "if command -v cap2hccapx >/dev/null 2>&1; then cap2hccapx \\\"$CAP\\\" \\\"$OUT\\\"; "
+                    + "elif command -v aircrack-ng >/dev/null 2>&1; then aircrack-ng -j /tmp/stryker_hs \\\"$CAP\\\" >/dev/null; OUT=/tmp/stryker_hs.hccapx; fi; "
+                    + "hashcat -m 2500 -a 0 \\\"$OUT\\\" \\\"$WL\\\" --force --status --status-timer=2\"'";
+        }
+        return exec + "'aircrack-ng -w " + wl + " " + cap + " '";
+    }
 
+    private static String shellQuote(String s) {
+        if (s == null) return "''";
+        return "'" + s.replace("'", "'\\''") + "'";
+    }
 
+    private boolean lineContainsKey(String line) {
+        if (line == null) return false;
+        return line.contains("KEY FOUND! [ ")
+                || (line.toLowerCase(Locale.US).contains("cracked") && line.contains(":"));
+    }
+
+    private String extractKey(String line) {
+        Matcher matcher = Pattern.compile("\\[ (.*?)\\]").matcher(line);
+        if (matcher.find()) return matcher.group(1);
+        // hashcat Recovered line style varies; keep simple trailing token after :
+        if (line.toLowerCase(Locale.US).contains("cracked")) {
+            String[] parts = line.split(":");
+            if (parts.length > 1) return parts[parts.length - 1].trim();
+        }
+        return null;
     }
 
     public void kill() {
@@ -131,35 +171,48 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     protected void onProgressUpdate(String... values) {
         super.onProgressUpdate(values);
         activity.runOnUiThread(() -> {
+            String raw = values[0];
+            if (liveLog != null) {
+                liveLog.append(raw + "\n");
+                if (liveLog.getLayout() != null) {
+                    int scroll = liveLog.getLayout().getLineTop(liveLog.getLineCount()) - liveLog.getHeight();
+                    liveLog.scrollTo(0, Math.max(scroll, 0));
+                }
+            }
 
             String rem = "";
-            Matcher matcher = Pattern.compile("\\d+/\\d+").matcher(values[0]);
-            Matcher matcher2 = Pattern.compile("\\d+ hours").matcher(values[0]);
-            Matcher matcher3 = Pattern.compile("\\d+ minutes").matcher(values[0]);
-            Matcher matcher4 = Pattern.compile("\\d+ seconds").matcher(values[0]);
-            if (matcher2.find()) {
-                rem = rem + matcher2.group(0) + " ";
-            }
-            if (matcher3.find()) {
-                rem = rem + matcher3.group(0) + " ";
-            }
-            if (matcher4.find()) {
-                rem = rem + matcher4.group(0) + " ";
-            }
+            Matcher matcher = Pattern.compile("\\d+/\\d+").matcher(raw);
+            Matcher matcher2 = Pattern.compile("\\d+ hours").matcher(raw);
+            Matcher matcher3 = Pattern.compile("\\d+ minutes").matcher(raw);
+            Matcher matcher4 = Pattern.compile("\\d+ seconds").matcher(raw);
+            Matcher speed = Pattern.compile("([\\d.]+)\\s*k/s", Pattern.CASE_INSENSITIVE).matcher(raw);
+            if (matcher2.find()) rem = rem + matcher2.group(0) + " ";
+            if (matcher3.find()) rem = rem + matcher3.group(0) + " ";
+            if (matcher4.find()) rem = rem + matcher4.group(0) + " ";
+
             int pr = 0;
             int all = 0;
+            String ratio = null;
             if (matcher.find()) {
-                pr = Integer.parseInt(Objects.requireNonNull(matcher.group(0)).split("/")[0]);
-                all = Integer.parseInt(Objects.requireNonNull(matcher.group(0)).split("/")[1]);
-                progress.setText("Progress: " + matcher.group(0) + " k/s");
+                ratio = matcher.group(0);
+                pr = Integer.parseInt(Objects.requireNonNull(ratio).split("/")[0]);
+                all = Integer.parseInt(Objects.requireNonNull(ratio).split("/")[1]);
+                String speedTxt = speed.find() ? speed.group(1) + " k/s" : "";
+                if (progress != null) {
+                    progress.setText("Tried " + ratio + (speedTxt.isEmpty() ? "" : " · " + speedTxt));
+                }
+            } else if (speed.find() && progress != null) {
+                progress.setText("Speed " + speed.group(1) + " k/s");
             }
             if (rem.length() != 0) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    CreateNotification(matcher.group(0), rem, pr, all);
+                    CreateNotification(ratio != null ? ratio : "Brute", rem, pr, all);
                 }
-                time.setText("Time remaining: " + rem);
+                if (time != null) {
+                    time.setVisibility(TextView.VISIBLE);
+                    time.setText("ETA " + rem.trim());
+                }
             }
-
         });
     }
 
@@ -185,11 +238,8 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
                 .setProgress(max, prog, false)
                 .setContentInfo("Info");
 
-
         NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
         notificationManager.createNotificationChannel(notificationChannel);
         notificationManager.notify(id, b.build());
     }
-
-
 }

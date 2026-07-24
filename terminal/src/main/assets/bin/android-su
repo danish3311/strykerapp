@@ -1,12 +1,14 @@
 #!/system/bin/sh
-# Version: 2.0.0
+# Version: 2.1.0
 #
 # Root Android shell (NON-chroot) using the bundled static bash.
+# Compatible with Magisk, KernelSU, and APatch (tries multiple su flags).
 
 STRYKER_FILES=/data/data/com.zalexdev.stryker/files
+BASH="$STRYKER_FILES/usr/bin/bash"
 
 # Android-side PATH (include common su manager locations).
-export PATH=$STRYKER_FILES/usr/bin:$STRYKER_FILES/usr/sbin:/sbin:/system/bin:/system/xbin:/system/sbin:/su/bin:/magisk/.core/bin:/debug_ramdisk:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/odm/bin:/vendor/bin:.
+export PATH=$STRYKER_FILES/usr/bin:$STRYKER_FILES/usr/sbin:/sbin:/system/bin:/system/xbin:/system/sbin:/su/bin:/magisk/.core/bin:/debug_ramdisk:/data/adb/ksu/bin:/data/adb/ap/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/odm/bin:/vendor/bin:.
 # Drop loader env so stock Android binaries run cleanly.
 unset LD_LIBRARY_PATH
 unset LD_PRELOAD
@@ -16,11 +18,38 @@ clear
 
 # Locate a working su without depending on 'which'.
 SU=
-for c in su /system/bin/su /system/xbin/su /sbin/su /debug_ramdisk/su /su/bin/su /sbin/bin/su; do
-    if command -v "$c" >/dev/null 2>&1; then SU="$c"; break; fi
+for c in \
+    /debug_ramdisk/su \
+    /data/adb/ksu/bin/su \
+    /data/adb/ap/bin/su \
+    /system/bin/su \
+    /system/xbin/su \
+    /sbin/su \
+    /su/bin/su \
+    su
+do
     if [ -x "$c" ]; then SU="$c"; break; fi
+    if command -v "$c" >/dev/null 2>&1; then SU="$c"; break; fi
 done
 [ -z "$SU" ] && SU=su
 
-# Root shell using the bundled static bash; -mm keeps the global mount namespace.
-exec "$SU" -mm -s "$STRYKER_FILES/usr/bin/bash"
+# Prefer bundled bash; fall back to system sh if missing.
+SHELL_BIN="$BASH"
+[ -x "$SHELL_BIN" ] || SHELL_BIN=/system/bin/sh
+
+# Magisk supports: su -mm -c / su -mm -s
+# KernelSU / APatch often only support: su -c  (no -mm / -s)
+# Try several launch styles; first that works wins.
+try_exec() {
+    exec "$@"
+}
+
+# 1) Magisk-style global mount ns + shell
+"$SU" -mm -c "id -u" >/dev/null 2>&1 && try_exec "$SU" -mm -s "$SHELL_BIN"
+"$SU" -mm -c "id -u" >/dev/null 2>&1 && try_exec "$SU" -mm -c "exec '$SHELL_BIN'"
+
+# 2) Plain -c with bash (KernelSU / APatch)
+"$SU" -c "id -u" >/dev/null 2>&1 && try_exec "$SU" -c "exec '$SHELL_BIN'"
+
+# 3) Last resort: interactive su (user must grant prompt)
+try_exec "$SU"

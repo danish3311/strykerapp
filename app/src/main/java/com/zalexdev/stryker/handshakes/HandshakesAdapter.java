@@ -14,6 +14,7 @@ import android.os.AsyncTask;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
@@ -156,12 +157,30 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         }
         new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.hs_wordlist_title)
-                .setItems(names, (di, idx) -> launchBrute(h, path, finalMac, get.get(idx)))
+                .setItems(names, (di, idx) -> pickEngineThenBrute(h, path, finalMac, get.get(idx)))
                 .setNegativeButton(R.string.cancel, null)
                 .show();
     }
 
-    private void launchBrute(ViewHolder h, String path, String finalMac, String wordlistPath) {
+    private void pickEngineThenBrute(ViewHolder h, String path, String finalMac, String wordlistPath) {
+        boolean hashcatOk = core.checkFile("/data/local/stryker/release/usr/bin/hashcat")
+                || core.checkFile("/data/local/stryker/release/usr/bin/hashcat.bin");
+        if (!hashcatOk) {
+            launchBrute(h, path, finalMac, wordlistPath, BruteHandshake.ENGINE_AIRCRACK);
+            return;
+        }
+        CharSequence[] engines = new CharSequence[]{"aircrack-ng", "hashcat"};
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.hs_engine_title)
+                .setItems(engines, (d, which) -> {
+                    String engine = which == 1 ? BruteHandshake.ENGINE_HASHCAT : BruteHandshake.ENGINE_AIRCRACK;
+                    launchBrute(h, path, finalMac, wordlistPath, engine);
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void launchBrute(ViewHolder h, String path, String finalMac, String wordlistPath, String engine) {
         h.progress.setVisibility(View.VISIBLE);
         h.progress.setTextColor(Color.parseColor("#9E9E9E"));
         h.timeLeft.setVisibility(View.VISIBLE);
@@ -172,30 +191,57 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         h.cancel.setVisibility(View.VISIBLE);
         h.progress.setText(R.string.hs_progress_starting);
 
+        // Live attack window
+        final Dialog logDialog = new Dialog(context);
+        logDialog.setContentView(R.layout.dialog_hs_brute_log);
+        Window w = logDialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        }
+        TextView liveLog = logDialog.findViewById(R.id.hs_brute_log);
+        TextView logTitle = logDialog.findViewById(R.id.hs_brute_log_title);
+        MaterialButton hideLog = logDialog.findViewById(R.id.hs_brute_log_hide);
+        logTitle.setText("Cracking · " + engine);
+        liveLog.setMovementMethod(new android.text.method.ScrollingMovementMethod());
+        hideLog.setOnClickListener(v -> logDialog.hide());
+        logDialog.setCancelable(true);
+        logDialog.show();
+
+        // Re-open log from the card while brute is running
+        h.itemView.setOnClickListener(v -> {
+            if (!logDialog.isShowing()) logDialog.show();
+        });
+
         new Thread(() -> {
             try {
                 id++;
                 String capRel = path.replace(core.getStorage(), "/sdcard/");
                 String wlRel = wordlistPath.replace(core.getStorage(), "/sdcard/");
-                BruteHandshake br = new BruteHandshake(capRel, wlRel, core, activity, context, h.progress, h.timeLeft, id);
+                BruteHandshake br = new BruteHandshake(capRel, wlRel, core, activity, context,
+                        h.progress, h.timeLeft, liveLog, id, engine);
                 activity.runOnUiThread(() -> h.cancel.setOnClickListener(v -> {
                     br.kill();
                     h.cancel.setVisibility(View.GONE);
                     h.brute.setVisibility(View.VISIBLE);
                     h.stateChip.setVisibility(View.GONE);
                     h.timeLeft.setVisibility(View.GONE);
+                    h.itemView.setOnClickListener(null);
+                    try { logDialog.dismiss(); } catch (Exception ignored) {}
                 }));
-                WiFINetwork w = br.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
+                WiFINetwork net = br.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
                 activity.runOnUiThread(() -> {
                     h.brute.setVisibility(View.VISIBLE);
                     h.cancel.setVisibility(View.GONE);
                     h.timeLeft.setVisibility(View.GONE);
-                    if (w.getOK()) {
-                        h.progress.setText(context.getResources().getString(R.string.pass_founded) + w.getPsk());
+                    h.itemView.setOnClickListener(null);
+                    try { logDialog.dismiss(); } catch (Exception ignored) {}
+                    if (net.getOK()) {
+                        h.progress.setText(context.getResources().getString(R.string.pass_founded) + net.getPsk());
                         h.progress.setTextColor(Color.parseColor("#388E3C"));
                         h.stateChip.setText(R.string.hs_state_cracked);
                         h.stateChip.setTextColor(Color.parseColor("#388E3C"));
-                        core.putString(finalMac, w.getPsk());
+                        core.putString(finalMac, net.getPsk());
                         if (onChangeListener != null) onChangeListener.run();
                     } else {
                         h.progress.setText(R.string.pass_not_found);
