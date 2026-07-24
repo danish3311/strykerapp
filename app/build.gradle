@@ -9,7 +9,7 @@ android {
     defaultConfig {
         applicationId "com.zalexdev.stryker"
         minSdk 24
-        targetSdk 28
+        targetSdk 33
         versionCode 450
         versionName "4.5R"
 
