@@ -1204,6 +1204,14 @@ public class Core {
         return monitorManager.enableMonitorMode(wlan,channel);
     }
 
+    public void lockWifiChannel(String wlan, String channel) {
+        monitorManager.lockChannel(wlan, channel);
+    }
+
+    public String resolveMonitorIface(String wlan) {
+        return monitorManager.resolveMonitorIface(wlan);
+    }
+
     public ArrayList<Credentials> getCredentials(){
         ArrayList<String> creds = getListString("creds");
         ArrayList<Credentials> credentialsList = new ArrayList<>();

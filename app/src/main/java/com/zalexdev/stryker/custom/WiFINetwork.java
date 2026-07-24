@@ -59,7 +59,7 @@ public class WiFINetwork {
     }
 
     public Boolean getIs5hhz() {
-        return channel >= 18;
+        return is5hhz || channel >= 36;
     }
 
     public void setIs5hhz(Boolean is5hhz) {

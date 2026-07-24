@@ -42,7 +42,7 @@ public class MonitorManager {
     }
     public boolean enableMonitorMode(String interfaceName){
         logger.writeLine("Enabling monitor mode on interface: " + interfaceName,1);
-        if (isMonitorModeEnabled(interfaceName)){
+        if (isMonitorModeEnabled(interfaceName) || isMonitorModeEnabled(interfaceName + "mon")){
             logger.writeLine("Monitor mode is already enabled on interface: " + interfaceName,1);
             return true;
         }
@@ -70,14 +70,56 @@ public class MonitorManager {
     }
     public boolean enableMonitorMode(String interfaceName,String channel){
         logger.writeLine("Enabling monitor mode on interface: " + interfaceName+ " on channel "+channel,1);
-        if (isMonitorModeEnabled(interfaceName)){
-            logger.writeLine("Monitor mode is already enabled on interface: " + interfaceName,1);
-            return true;
+        boolean alreadyMon = isMonitorModeEnabled(interfaceName) || isMonitorModeEnabled(interfaceName + "mon");
+        if (!alreadyMon) {
+            core.customChrootCommand(getMonitorCommand(interfaceName, channel));
+        } else {
+            logger.writeLine("Monitor mode already enabled — locking channel " + channel, 1);
         }
-        core.customChrootCommand(getMonitorCommand(interfaceName,channel));
-        boolean ok = isMonitorModeEnabled(interfaceName);
-        if (!ok){ok = isMonitorModeEnabled(interfaceName);}
+        boolean ok = isMonitorModeEnabled(interfaceName) || isMonitorModeEnabled(interfaceName + "mon");
+        if (ok) {
+            // Always lock frequency. aireplay-ng reports "channel -1" when the
+            // mon iface was left untuned (common if monitor was already up).
+            lockChannel(interfaceName, channel);
+        }
         return ok;
+    }
+
+    /**
+     * Force the live monitor iface onto {@code channel}. Prefer the airmon-ng
+     * renamed {@code ifcmon} name when present.
+     */
+    public void lockChannel(String interfaceName, String channel) {
+        if (channel == null) {
+            return;
+        }
+        String ch = channel.trim();
+        if (ch.isEmpty() || ch.equals("0") || ch.equals("-1")) {
+            logger.writeLine("Refusing invalid channel lock: '" + channel + "'", 2);
+            return;
+        }
+        String iface = resolveMonitorIface(interfaceName);
+        core.customChrootCommand("iw dev " + iface + " set channel " + ch);
+        // Some drivers need a short hop via freq set; ignore failures.
+        core.customChrootCommand("iwconfig " + iface + " channel " + ch);
+        logger.writeLine("Locked " + iface + " to channel " + ch, 1);
+    }
+
+    public String resolveMonitorIface(String interfaceName) {
+        if (interfaceName == null) {
+            return "";
+        }
+        if (interfaceName.endsWith("mon")) {
+            return interfaceName;
+        }
+        ArrayList<String> ifaces = core.getInterfacesList();
+        if (ifaces != null && ifaces.contains(interfaceName + "mon")) {
+            return interfaceName + "mon";
+        }
+        if (isMonitorModeEnabled(interfaceName + "mon")) {
+            return interfaceName + "mon";
+        }
+        return interfaceName;
     }
 
     public String getHSInterface(){

@@ -144,19 +144,38 @@ public class ScanWifi extends AsyncTask<Void, String, ArrayList<WiFINetwork>> {
                     wifi.setSsid("Hidden network");
                 }
                 count = count + 1;
-            } else if (temp.contains("DS Parameter set: channel") && count == 3) {
-                String ch = temp.replace("DS Parameter set: channel", "");
-                Matcher m = Pattern.compile("\\d+").matcher(ch);
-                if (m.find()){
-                wifi.setChannel(Integer.parseInt(m.group()));}
-                count = count + 1;
-            } else if (temp.contains("primary channel:") && count == 3) {
-                String ch = temp.replace("primary channel:", "");
-                wifi.setIs5hhz(true);
-                Matcher m = Pattern.compile("\\d+").matcher(ch);
-                if (m.find()){
-                    wifi.setChannel(Integer.parseInt(m.group()));}
-                count = count + 1;
+                // freq: often appears before SSID; once we have mac+signal+ssid+channel, commit
+                if (count == 3 && wifi.getChannel() > 0) {
+                    count = 4;
+                }
+            } else if (temp.contains("freq:")) {
+                // Always parse frequency — order in `iw scan` is unreliable, and
+                // missing channel leaves aireplay stuck on "channel -1".
+                Matcher m = Pattern.compile("\\d+").matcher(temp.replace("freq:", ""));
+                if (m.find()) {
+                    int freq = Integer.parseInt(m.group());
+                    int ch = freqToChannel(freq);
+                    if (ch > 0) {
+                        wifi.setChannel(ch);
+                        if (freq >= 5000) {
+                            wifi.setIs5hhz(true);
+                        }
+                        if (count == 3) {
+                            count = 4;
+                        }
+                    }
+                }
+            } else if (temp.contains("DS Parameter set: channel") || temp.contains("primary channel:")) {
+                if (temp.contains("primary channel:")) {
+                    wifi.setIs5hhz(true);
+                }
+                Matcher m = Pattern.compile("\\d+").matcher(temp);
+                if (m.find()) {
+                    wifi.setChannel(Integer.parseInt(m.group()));
+                }
+                if (count == 3) {
+                    count = count + 1;
+                }
             }
             if (count == 4) {
 
@@ -191,6 +210,23 @@ public class ScanWifi extends AsyncTask<Void, String, ArrayList<WiFINetwork>> {
             tempInfo = new ArrayList<>();
         }
         return networks;
+    }
+
+    /** Convert MHz center frequency from `iw scan` to 802.11 channel number. */
+    static int freqToChannel(int freq) {
+        if (freq == 2484) {
+            return 14;
+        }
+        if (freq >= 2412 && freq <= 2472) {
+            return (freq - 2407) / 5;
+        }
+        if (freq >= 5000 && freq < 5900) {
+            return (freq - 5000) / 5;
+        }
+        if (freq >= 5955 && freq <= 7115) {
+            return (freq - 5950) / 5;
+        }
+        return -1;
     }
 
 }

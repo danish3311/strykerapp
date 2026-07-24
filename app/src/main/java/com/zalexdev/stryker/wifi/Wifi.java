@@ -651,15 +651,21 @@ public class Wifi extends Fragment {
         final boolean[] device = {false};
         final int[] totalSuccess = {0};
         mdk4 = null;
-        outputtext.setText("Starting monitor mode on " + core.monitorManager.getHSInterface() + "...\n");
+        outputtext.setText("Starting monitor mode on " + core.getString("wlan_scan") + "...\n");
         new Thread(() -> {
-            boolean monitor = core.monitorManager.enableMonitorMode(core.getHSInterface());
+            String scanRaw = core.getString("wlan_scan");
+            if (scanRaw == null || scanRaw.isEmpty()) {
+                scanRaw = core.monitorManager.getHSInterface();
+            }
+            final String scanIfacePref = scanRaw;
+            boolean monitor = core.monitorManager.enableMonitorMode(scanIfacePref);
+            String hsIface = core.getHSInterface();
             if (!monitor) {
-                safeUi(() -> outputtext.setText(getString(R.string.wifi_monitor_failed, core.getHSInterface())));
+                safeUi(() -> outputtext.setText(getString(R.string.wifi_monitor_failed, scanIfacePref)));
             } else {
                 core.customCommand("rm /sdcard/Stryker/hs/handshakenow*.cap");
                 core.customCommand("rm /sdcard/Stryker/hs/handshakenow*.csv");
-                String cmd = "airodump-ng " + core.getHSInterface() + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv  --update 3";
+                String cmd = "airodump-ng " + hsIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv  --update 3";
                 airodump = new AdvancedProcess(activity, context, cmd, true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
@@ -866,10 +872,18 @@ public class Wifi extends Fragment {
         MaterialCardView info_card = dialog.findViewById(R.id.info_card);
         info_card.setVisibility(View.GONE);
         outputtext.setMovementMethod(new ScrollingMovementMethod());
-        outputtext.append("Starting monitor mode on " + core.getDeauthInterface() + "...\n");
+        outputtext.append("Starting monitor mode on " + core.getString("wlan_deauth") + "...\n");
         new Thread(() -> {
-            if (core.monitorManager.enableMonitorMode(core.getDeauthInterface())) {
-                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + core.getDeauthInterface() + " d", true) {
+            // Use prefs name (wlan0) for airmon/con_mode, then resolved name for mdk4.
+            // Mass deauth hops channels via mdk4 — no single-channel lock (unlike aireplay).
+            String deauthRaw = core.getString("wlan_deauth");
+            if (deauthRaw == null || deauthRaw.isEmpty()) {
+                deauthRaw = core.getDeauthInterface();
+            }
+            if (core.monitorManager.enableMonitorMode(deauthRaw)) {
+                String deauthIface = core.getDeauthInterface();
+                safeUi(() -> outputtext.append("Monitor ready on " + deauthIface + " (mdk4 channel hop)\n"));
+                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + deauthIface + " d", true) {
 
                     @Override
                     protected void onPrepare() {

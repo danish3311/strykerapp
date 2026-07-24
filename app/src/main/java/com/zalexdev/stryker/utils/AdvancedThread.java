@@ -42,6 +42,11 @@ public  abstract class AdvancedThread {
         this.canceled = canceled;
         new Thread(this::onCanceled).start();
     }
+
+    public boolean isCanceled() {
+        return canceled;
+    }
+
     public abstract void onCanceled();
 
     public void setSuccess(boolean success) {
