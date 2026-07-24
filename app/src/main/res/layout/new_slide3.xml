@@ -20,7 +20,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
-            android:text="Chroot install"
+            android:text="@string/chroot_slide_title"
             android:textColor="?android:attr/textColorPrimary"
             android:textSize="28sp"
             android:textStyle="bold" />
@@ -32,7 +32,7 @@
             android:layout_marginStart="4dp"
             android:layout_marginTop="4dp"
             android:layout_marginBottom="14dp"
-            android:text="Pulls and unpacks the Alpine-based tooling chroot Stryker runs on."
+            android:text="@string/chroot_slide_description"
             android:textColor="@color/grey"
             android:textSize="13sp" />
 
@@ -92,7 +92,7 @@
                             android:id="@+id/status_title"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Stryker chroot"
+                            android:text="@string/chroot_status_title"
                             android:textColor="?android:attr/textColorPrimary"
                             android:textSize="16sp"
                             android:textStyle="bold" />
@@ -102,7 +102,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="2dp"
-                            android:text="Tap Download to begin"
+                            android:text="@string/chroot_status_idle"
                             android:textColor="@color/grey"
                             android:textSize="12sp" />
                     </LinearLayout>
@@ -203,16 +203,48 @@
                 android:padding="6dp" />
         </com.google.android.material.card.MaterialCardView>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/login"
+        <LinearLayout
+            android:id="@+id/install_actions"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:text="Download"
-            android:textSize="15sp"
-            app:cornerRadius="16dp"
-            app:icon="@drawable/download"
-            app:iconGravity="textStart"
-            app:iconPadding="8dp" />
+            android:orientation="vertical">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/login"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:text="@string/chroot_download_online"
+                android:textSize="15sp"
+                app:cornerRadius="16dp"
+                app:icon="@drawable/download"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/select_local_chroot"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="10dp"
+                android:text="@string/chroot_select_local"
+                android:textSize="15sp"
+                app:cornerRadius="16dp"
+                app:icon="@drawable/folder"
+                app:iconGravity="textStart"
+                app:iconPadding="8dp"
+                app:strokeColor="@color/stryker_accent" />
+
+            <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/local_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp"
+                android:text="@string/chroot_local_hint"
+                android:textColor="@color/grey"
+                android:textSize="12sp" />
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

@@ -5,20 +5,27 @@ import android.app.Activity;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
+import android.database.Cursor;
 import android.graphics.PorterDuff;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.animation.Animation;
-import android.view.animation.AnimationUtils;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
@@ -42,7 +49,10 @@ import com.zalexdev.stryker.ota.RemoteManifest;
 import com.zalexdev.stryker.ota.VerifiedDownloader;
 import com.zalexdev.stryker.utils.Core;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.EnumMap;
 import java.util.Locale;
 
@@ -53,6 +63,7 @@ public class Slide3 extends Fragment {
             "/data/data/com.zalexdev.stryker/files/core.tar.gz";
 
     private static final int NOTIFICATION_ID = 34;
+    private static final long MIN_ARCHIVE_BYTES = 1024L * 1024L;
 
     private Activity activity;
     private Context context;
@@ -77,12 +88,28 @@ public class Slide3 extends Fragment {
     private RecyclerView logRecycler;
     private LogAdapter logAdapter;
 
+    private View installActions;
     private MaterialButton autoInstallButton;
+    private MaterialButton selectLocalButton;
+    private TextView localHint;
 
     private final EnumMap<InstallStage, StageRow> stageRows = new EnumMap<>(InstallStage.class);
 
     private NotificationCompat.Builder notification;
     private NotificationManager notificationManager;
+
+    private ActivityResultLauncher<String[]> localChrootPicker;
+    private boolean installRunning;
+    private boolean usingLocalArchive;
+    private LayoutInflater layoutInflater;
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        localChrootPicker = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                this::onLocalChrootPicked);
+    }
 
     @SuppressLint({"SdCardPath", "SetTextI18n"})
     @Nullable
@@ -118,27 +145,70 @@ public class Slide3 extends Fragment {
         logAdapter = new LogAdapter(context);
         logRecycler.setAdapter(logAdapter);
 
+        installActions = view.findViewById(R.id.install_actions);
         autoInstallButton = view.findViewById(R.id.login);
+        selectLocalButton = view.findViewById(R.id.select_local_chroot);
+        localHint = view.findViewById(R.id.local_hint);
+        layoutInflater = inflater;
 
-        buildStageRows(inflater);
+        buildStageRows(false);
 
-        autoInstallButton.setOnClickListener(v -> startInstall());
+        autoInstallButton.setOnClickListener(v -> startInstallFromNetwork());
+        selectLocalButton.setOnClickListener(v -> openLocalPicker());
         return view;
     }
 
-    @SuppressLint("SdCardPath")
-    private void startInstall() {
-        autoInstallButton.setVisibility(View.INVISIBLE);
+    private void openLocalPicker() {
+        if (installRunning) {
+            return;
+        }
+        localChrootPicker.launch(new String[]{
+                "application/gzip",
+                "application/x-gzip",
+                "application/x-gtar",
+                "application/x-tar",
+                "application/octet-stream",
+                "*/*"
+        });
+    }
+
+    private void onLocalChrootPicked(@Nullable Uri uri) {
+        if (uri == null || installRunning) {
+            return;
+        }
+        try {
+            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            context.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+        } catch (SecurityException ignored) {
+            // Some providers do not support persistable grants; openInputStream still works.
+        }
+        startInstallFromLocal(uri);
+    }
+
+    private void beginUiSession(boolean localArchive) {
+        installRunning = true;
+        usingLocalArchive = localArchive;
+        installActions.setVisibility(View.GONE);
         stagesHeader.setVisibility(View.VISIBLE);
         stagesContainer.setVisibility(View.VISIBLE);
         stagesCard.setVisibility(View.VISIBLE);
         logHeader.setVisibility(View.VISIBLE);
         logCard.setVisibility(View.VISIBLE);
         logRecycler.setVisibility(View.VISIBLE);
+        buildStageRows(localArchive);
         resetStages();
-        setStatus(StatusKind.RUNNING, "Stryker chroot", "Starting...");
+        setStatus(StatusKind.RUNNING, getString(R.string.chroot_status_title), "Starting...");
         log(LogLevel.INFO, "Architecture: " + (core.is64Bit() ? "64-bit (arm64-v8a)" : "32-bit (armeabi-v7a)"));
         log(LogLevel.INFO, "Stryker " + BuildConfig.VERSION_NAME + " · build " + BuildConfig.VERSION_CODE);
+    }
+
+    @SuppressLint("SdCardPath")
+    private void startInstallFromNetwork() {
+        if (installRunning) {
+            return;
+        }
+        beginUiSession(false);
+        log(LogLevel.INFO, "Source: internet download");
 
         new Thread(() -> {
             markStage(InstallStage.PREPARING, RowState.ACTIVE);
@@ -155,83 +225,232 @@ public class Slide3 extends Fragment {
                 markStage(InstallStage.DOWNLOADING, RowState.DONE);
                 log(LogLevel.SUCCESS, "Download complete");
                 runOnUi(() -> downloadBlock.setVisibility(View.GONE));
-
-                markStage(InstallStage.UNPACKING, RowState.ACTIVE);
-                log(LogLevel.STEP, "Extracting archive into /data/local/stryker");
-                runOnUi(() -> progress.setIndeterminate(true));
-
-                if (unTarFile()) {
-                    markStage(InstallStage.UNPACKING, RowState.DONE);
-                    log(LogLevel.SUCCESS, "Archive extracted");
-
-                    notificationManager.cancel(NOTIFICATION_ID);
-                    core.deleteFile(DOWNLOADED_CHROOT_PATH);
-
-                    markStage(InstallStage.MOUNTING, RowState.ACTIVE);
-                    log(LogLevel.STEP, "Mounting chroot via bootroot");
-                    core.mountCore();
-                    markStage(InstallStage.MOUNTING, RowState.DONE);
-                    log(LogLevel.SUCCESS, "Chroot mounted");
-
-                    markStage(InstallStage.UPGRADING, RowState.ACTIVE);
-                    log(LogLevel.STEP, "Upgrading Alpine packages");
-                    log(LogLevel.CMD, "apk upgrade -U --no-cache");
-                    core.customChrootCommand("apk upgrade -U --no-cache");
-                    markStage(InstallStage.UPGRADING, RowState.DONE);
-                    log(LogLevel.SUCCESS, "Alpine packages up to date");
-
-                    markStage(InstallStage.DEPLOYING_EXPLOITS, RowState.ACTIVE);
-                    log(LogLevel.STEP, "Deploying built-in exploits");
-                    core.deleteFile("/sdcard/Stryker/exploits/");
-                    core.copyFile("/data/data/com.zalexdev.stryker/files/checker.py",
-                            "/data/local/stryker/release/exploits/checker.py");
-                    core.copyFile("/data/local/stryker/release/exploits/", "/sdcard/Stryker/exploits");
-                    core.chmodFolder("/data/data/com.zalexdev.stryker/files");
-                    int authCopied = deployAuthLists();
-                    log(LogLevel.INFO, "Copied " + authCopied + " auth_*.txt list"
-                            + (authCopied == 1 ? "" : "s") + " to /sdcard/Stryker/rs");
-                    markStage(InstallStage.DEPLOYING_EXPLOITS, RowState.DONE);
-                    log(LogLevel.SUCCESS, "Exploits deployed to /sdcard/Stryker/exploits");
-
-                    markStage(InstallStage.FINALIZING, RowState.ACTIVE);
-                    log(LogLevel.CMD, "echo update > /data/local/stryker/release/4.0");
-                    core.customCommand("echo update > /data/local/stryker/release/4.0");
-                    core.deleteFile("/sdcard/Stryker/exploits/checker.py");
-                    markStage(InstallStage.FINALIZING, RowState.DONE);
-                    log(LogLevel.SUCCESS, "Version marker written");
-
-                    markStage(InstallStage.DONE, RowState.DONE);
-                    setStatus(StatusKind.SUCCESS, "Stryker chroot",
-                            "Installation complete — moving on...");
-                    log(LogLevel.SUCCESS, "All stages passed");
-
-                    runOnUi(() -> {
-                        progress.setVisibility(View.INVISIBLE);
-                        WaveDrawable mWaveDrawable = ((AppIntroActivity) activity).getWaveDrawable();
-                        core.setSmoothLevel(mWaveDrawable, 7500);
-                        core.moveNext(mPager);
-                    });
-                } else {
-                    markStage(InstallStage.UNPACKING, RowState.FAILED);
-                    notificationManager.cancel(NOTIFICATION_ID);
-                    failWith("Failed to extract — archive may be corrupt or busybox not present");
-                }
+                finishInstallAfterArchive();
             } else {
                 markStage(InstallStage.DOWNLOADING, RowState.FAILED);
                 notificationManager.cancel(NOTIFICATION_ID);
-                failWith("Download failed — check internet connection");
+                failWith(getString(R.string.chroot_download_failed_hint));
             }
-        }).start();
+        }, "stryker-chroot-download").start();
+    }
+
+    @SuppressLint("SdCardPath")
+    private void startInstallFromLocal(Uri uri) {
+        if (installRunning) {
+            return;
+        }
+        beginUiSession(true);
+        String displayName = queryDisplayName(uri);
+        log(LogLevel.INFO, "Source: local file"
+                + (displayName != null && !displayName.isEmpty() ? " (" + displayName + ")" : ""));
+
+        new Thread(() -> {
+            markStage(InstallStage.PREPARING, RowState.ACTIVE);
+            log(LogLevel.STEP, "Preparing storage layout");
+            clear();
+            markStage(InstallStage.PREPARING, RowState.DONE);
+            log(LogLevel.SUCCESS, "Storage layout ready");
+
+            markStage(InstallStage.IMPORTING, RowState.ACTIVE);
+            log(LogLevel.STEP, "Importing selected archive into app storage");
+            String copyError = copyLocalArchive(uri);
+            if (copyError == null) {
+                markStage(InstallStage.IMPORTING, RowState.DONE);
+                log(LogLevel.SUCCESS, "Local archive ready");
+                runOnUi(() -> downloadBlock.setVisibility(View.GONE));
+                finishInstallAfterArchive();
+            } else {
+                markStage(InstallStage.IMPORTING, RowState.FAILED);
+                notificationManager.cancel(NOTIFICATION_ID);
+                failWith(copyError);
+            }
+        }, "stryker-chroot-import").start();
+    }
+
+    /** Shared path after core.tar.gz is present at DOWNLOADED_CHROOT_PATH. */
+    @SuppressLint("SdCardPath")
+    private void finishInstallAfterArchive() {
+        markStage(InstallStage.UNPACKING, RowState.ACTIVE);
+        log(LogLevel.STEP, "Extracting archive into /data/local/stryker");
+        runOnUi(() -> progress.setIndeterminate(true));
+
+        if (!unTarFile()) {
+            markStage(InstallStage.UNPACKING, RowState.FAILED);
+            notificationManager.cancel(NOTIFICATION_ID);
+            failWith("Failed to extract — archive may be corrupt or busybox not present");
+            return;
+        }
+
+        markStage(InstallStage.UNPACKING, RowState.DONE);
+        log(LogLevel.SUCCESS, "Archive extracted");
+
+        notificationManager.cancel(NOTIFICATION_ID);
+        core.deleteFile(DOWNLOADED_CHROOT_PATH);
+
+        markStage(InstallStage.MOUNTING, RowState.ACTIVE);
+        log(LogLevel.STEP, "Mounting chroot via bootroot");
+        if (!core.mountCore()) {
+            markStage(InstallStage.MOUNTING, RowState.FAILED);
+            failWith(getString(R.string.chroot_mount_failed));
+            return;
+        }
+        markStage(InstallStage.MOUNTING, RowState.DONE);
+        log(LogLevel.SUCCESS, "Chroot mounted");
+
+        markStage(InstallStage.UPGRADING, RowState.ACTIVE);
+        if (hasInternet()) {
+            log(LogLevel.STEP, "Upgrading Alpine packages");
+            log(LogLevel.CMD, "apk upgrade -U --no-cache");
+            core.customChrootCommand("apk upgrade -U --no-cache");
+            markStage(InstallStage.UPGRADING, RowState.DONE);
+            log(LogLevel.SUCCESS, "Alpine packages up to date");
+        } else {
+            log(LogLevel.WARN, usingLocalArchive
+                    ? "Offline install — skipped apk upgrade"
+                    : "No internet — skipped apk upgrade");
+            markStage(InstallStage.UPGRADING, RowState.DONE);
+        }
+
+        markStage(InstallStage.DEPLOYING_EXPLOITS, RowState.ACTIVE);
+        log(LogLevel.STEP, "Deploying built-in exploits");
+        core.deleteFile("/sdcard/Stryker/exploits/");
+        core.copyFile("/data/data/com.zalexdev.stryker/files/checker.py",
+                "/data/local/stryker/release/exploits/checker.py");
+        core.copyFile("/data/local/stryker/release/exploits/", "/sdcard/Stryker/exploits");
+        core.chmodFolder("/data/data/com.zalexdev.stryker/files");
+        int authCopied = deployAuthLists();
+        log(LogLevel.INFO, "Copied " + authCopied + " auth_*.txt list"
+                + (authCopied == 1 ? "" : "s") + " to /sdcard/Stryker/rs");
+        markStage(InstallStage.DEPLOYING_EXPLOITS, RowState.DONE);
+        log(LogLevel.SUCCESS, "Exploits deployed to /sdcard/Stryker/exploits");
+
+        markStage(InstallStage.FINALIZING, RowState.ACTIVE);
+        log(LogLevel.CMD, "echo update > /data/local/stryker/release/4.0");
+        core.customCommand("echo update > /data/local/stryker/release/4.0");
+        core.deleteFile("/sdcard/Stryker/exploits/checker.py");
+        markStage(InstallStage.FINALIZING, RowState.DONE);
+        log(LogLevel.SUCCESS, "Version marker written");
+
+        markStage(InstallStage.DONE, RowState.DONE);
+        setStatus(StatusKind.SUCCESS, getString(R.string.chroot_status_title),
+                "Installation complete — moving on...");
+        log(LogLevel.SUCCESS, "All stages passed");
+        installRunning = false;
+
+        runOnUi(() -> {
+            progress.setVisibility(View.INVISIBLE);
+            WaveDrawable mWaveDrawable = ((AppIntroActivity) activity).getWaveDrawable();
+            core.setSmoothLevel(mWaveDrawable, 7500);
+            core.moveNext(mPager);
+        });
+    }
+
+    /**
+     * Copies a SAF/content URI into the fixed core.tar.gz path used by busybox extract.
+     * @return null on success, otherwise a user-facing error message
+     */
+    @Nullable
+    private String copyLocalArchive(Uri uri) {
+        runOnUi(() -> {
+            downloadBlock.setVisibility(View.VISIBLE);
+            progress.setIndeterminate(true);
+            progress.setVisibility(View.VISIBLE);
+            downloadText.setText(R.string.chroot_copying_local);
+        });
+        notification = new NotificationCompat.Builder(context, context.getResources().getString(R.string.notification_channel_updater))
+                .setOngoing(true)
+                .setContentTitle(context.getResources().getString(R.string.notification_channel_updater))
+                .setContentText(context.getResources().getString(R.string.chroot_copying_local))
+                .setSmallIcon(R.drawable.bolt)
+                .setOnlyAlertOnce(true)
+                .setProgress(100, 0, true);
+        notificationManager.notify(NOTIFICATION_ID, notification.build());
+
+        File outFile = new File(DOWNLOADED_CHROOT_PATH);
+        File part = new File(DOWNLOADED_CHROOT_PATH + ".part");
+        long knownSize = querySize(uri);
+        long copied = 0;
+        long lastUiMs = 0;
+        int lastPercent = -1;
+
+        try (InputStream raw = context.getContentResolver().openInputStream(uri)) {
+            if (raw == null) {
+                return getString(R.string.chroot_copy_failed);
+            }
+            try (BufferedInputStream in = new BufferedInputStream(raw);
+                 FileOutputStream out = new FileOutputStream(part)) {
+                byte[] magic = new byte[2];
+                in.mark(2);
+                int magicRead = in.read(magic);
+                in.reset();
+                if (magicRead < 2 || (magic[0] & 0xFF) != 0x1F || (magic[1] & 0xFF) != 0x8B) {
+                    deleteQuietly(part);
+                    return getString(R.string.chroot_invalid_archive);
+                }
+
+                byte[] buffer = new byte[256 * 1024];
+                int read;
+                long startMs = System.currentTimeMillis();
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                    copied += read;
+                    long now = System.currentTimeMillis();
+                    if (now - lastUiMs < 200) {
+                        continue;
+                    }
+                    lastUiMs = now;
+                    final long copiedFinal = copied;
+                    final long elapsed = now - startMs;
+                    if (knownSize > 0) {
+                        int percent = (int) Math.min(100, (copied * 100L) / knownSize);
+                        if (percent != lastPercent) {
+                            lastPercent = percent;
+                            final int percentFinal = percent;
+                            runOnUi(() -> {
+                                progress.setIndeterminate(false);
+                                progress.setProgress(percentFinal, true);
+                                downloadText.setText(formatMb(copiedFinal) + " / " + formatMb(knownSize)
+                                        + " (" + percentFinal + "%) · " + formatSpeed(copiedFinal, elapsed));
+                            });
+                            notification.setProgress(100, percentFinal, false);
+                            notificationManager.notify(NOTIFICATION_ID, notification.build());
+                        }
+                    } else {
+                        runOnUi(() -> downloadText.setText(formatMb(copiedFinal)
+                                + " · " + formatSpeed(copiedFinal, elapsed)));
+                    }
+                }
+                out.getFD().sync();
+            }
+        } catch (Exception e) {
+            deleteQuietly(part);
+            String msg = e.getMessage();
+            return msg != null && !msg.isEmpty() ? msg : getString(R.string.chroot_copy_failed);
+        }
+
+        if (copied < MIN_ARCHIVE_BYTES) {
+            deleteQuietly(part);
+            return getString(R.string.chroot_invalid_archive);
+        }
+
+        deleteQuietly(outFile);
+        if (!part.renameTo(outFile)) {
+            deleteQuietly(part);
+            return getString(R.string.chroot_copy_failed);
+        }
+        log(LogLevel.INFO, "Imported " + formatMb(copied));
+        return null;
     }
 
     private void failWith(String reason) {
-        setStatus(StatusKind.FAILED, "Stryker chroot", reason);
+        installRunning = false;
+        setStatus(StatusKind.FAILED, getString(R.string.chroot_status_title), reason);
         log(LogLevel.ERROR, reason);
         runOnUi(() -> {
             progress.setIndeterminate(false);
             downloadBlock.setVisibility(View.GONE);
             autoInstallButton.setText(R.string.try_again);
-            autoInstallButton.setVisibility(View.VISIBLE);
+            installActions.setVisibility(View.VISIBLE);
         });
     }
 
@@ -360,6 +579,58 @@ public class Slide3 extends Fragment {
         return core.checkFolder("/data/local/stryker/release/bin/");
     }
 
+    @Nullable
+    private String queryDisplayName(Uri uri) {
+        try (Cursor cursor = context.getContentResolver().query(uri,
+                new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0) {
+                    return cursor.getString(idx);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return uri.getLastPathSegment();
+    }
+
+    private long querySize(Uri uri) {
+        try (Cursor cursor = context.getContentResolver().query(uri,
+                new String[]{OpenableColumns.SIZE}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int idx = cursor.getColumnIndex(OpenableColumns.SIZE);
+                if (idx >= 0 && !cursor.isNull(idx)) {
+                    return cursor.getLong(idx);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return -1;
+    }
+
+    private static void deleteQuietly(File file) {
+        if (file != null && file.exists() && !file.delete()) {
+            file.deleteOnExit();
+        }
+    }
+
+    private boolean hasInternet() {
+        ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) {
+            return false;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Network network = cm.getActiveNetwork();
+            if (network == null) {
+                return false;
+            }
+            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        }
+        android.net.NetworkInfo info = cm.getActiveNetworkInfo();
+        return info != null && info.isConnected();
+    }
+
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(
@@ -422,11 +693,20 @@ public class Slide3 extends Fragment {
 
     private enum RowState { PENDING, ACTIVE, DONE, FAILED }
 
-    private void buildStageRows(LayoutInflater inflater) {
+    private void buildStageRows(boolean localArchive) {
+        if (layoutInflater == null || stagesContainer == null) {
+            return;
+        }
         stagesContainer.removeAllViews();
         stageRows.clear();
         for (InstallStage stage : InstallStage.values()) {
-            View row = inflater.inflate(R.layout.install_stage_row, stagesContainer, false);
+            if (localArchive && stage == InstallStage.DOWNLOADING) {
+                continue;
+            }
+            if (!localArchive && stage == InstallStage.IMPORTING) {
+                continue;
+            }
+            View row = layoutInflater.inflate(R.layout.install_stage_row, stagesContainer, false);
             TextView title = row.findViewById(R.id.stage_title);
             ImageView icon = row.findViewById(R.id.stage_icon);
             ProgressBar spinner = row.findViewById(R.id.stage_spinner);
