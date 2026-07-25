@@ -279,8 +279,8 @@ public class WifiJamFragment extends Fragment {
     private void pickBurstThenMulti(String title, ArrayList<WiFINetwork> selected,
                                     boolean useMdk4, String mdkFlag) {
         java.util.Collections.sort(selected, (a, b) -> Integer.compare(a.getChannel(), b.getChannel()));
-        int saved = core.getInt("jam_multi_burst_sec");
-        if (saved <= 0) saved = 2;
+        int savedRaw = core.getInt("jam_multi_burst_sec");
+        final int saved = savedRaw <= 0 ? 2 : savedRaw;
         CharSequence[] items = new CharSequence[]{
                 "1 second per AP",
                 "2 seconds per AP",
