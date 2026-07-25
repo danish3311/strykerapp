@@ -74,12 +74,23 @@ class SettingsActivity : AppCompatActivity() {
       val bin = NeoTermPath.BIN_PATH
       Runtime.getRuntime().exec("mkdir -p $usr/").waitFor()
       Shell.cmd("/system/bin/rm -rf $bin").exec()
-      Thread.sleep(1200)
-      extractAssetsDir("bin", "$bin/")
-      Thread.sleep(800)
-      Shell.cmd("/system/bin/chmod +x $bin/bash").exec()
-      Shell.cmd("/system/bin/chmod +x $bin/stryker-ch").exec()
-      Shell.cmd("/system/bin/chmod +x $bin/android-su").exec()
+      Thread.sleep(400)
+      java.io.File(bin).mkdirs()
+      extractAssetsDir("bin", "$bin/", overwrite = true)
+      try {
+        java.io.File(bin, ".stryker_bin_ver").writeText(NeoTermPath.BIN_ASSET_VERSION)
+      } catch (_: Exception) {
+      }
+      for (name in listOf("bash", "stryker-ch", "stryker-ch-inner", "android-su")) {
+        val f = java.io.File(bin, name)
+        if (f.exists()) {
+          f.setReadable(true, false)
+          f.setExecutable(true, false)
+        }
+      }
+      Shell.cmd(
+        "/system/bin/chmod 755 $bin/bash $bin/stryker-ch $bin/stryker-ch-inner $bin/android-su"
+      ).exec()
       runOnUiThread {
         if (!isFinishing && !isDestroyed) {
           MaterialAlertDialogBuilder(this)

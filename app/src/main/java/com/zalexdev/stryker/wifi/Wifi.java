@@ -223,6 +223,9 @@ public class Wifi extends Fragment {
                 if (mainActivity != null) {
                     mainActivity.setNetworks(list);
                 }
+                if (list != null) {
+                    core.saveLastWifiScan(list);
+                }
                 if (core.getBoolean("geomac_bg_scan") && list != null) {
                     for (WiFINetwork n : list) {
                         if (n != null && n.getMac() != null && !n.getMac().isEmpty()) {
@@ -238,6 +241,10 @@ public class Wifi extends Fragment {
                     failedscancount++;
                     Thread.sleep(3000);
                     list = new ScanWifi(wlan, core).execute().get();
+                }
+                if (list != null) {
+                    core.saveLastWifiScan(list);
+                    if (mainActivity != null) mainActivity.setNetworks(list);
                 }
 
                 for (int i = 0; i < list.size(); i++) {

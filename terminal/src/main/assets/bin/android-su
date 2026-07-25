@@ -1,55 +1,62 @@
 #!/system/bin/sh
-# Version: 2.1.0
+# Version: 2.3.0
 #
-# Root Android shell (NON-chroot) using the bundled static bash.
-# Compatible with Magisk, KernelSU, and APatch (tries multiple su flags).
+# Root Android shell (NON-chroot). KernelSU/APatch/Magisk friendly.
+# Avoid nested `su -c "exec …"` which often returns "Permission denied"
+# under KernelSU when launched from a PTY.
 
 STRYKER_FILES=/data/data/com.zalexdev.stryker/files
 BASH="$STRYKER_FILES/usr/bin/bash"
 
-# Android-side PATH (include common su manager locations).
 export PATH=$STRYKER_FILES/usr/bin:$STRYKER_FILES/usr/sbin:/sbin:/system/bin:/system/xbin:/system/sbin:/su/bin:/magisk/.core/bin:/debug_ramdisk:/data/adb/ksu/bin:/data/adb/ap/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/odm/bin:/vendor/bin:.
-# Drop loader env so stock Android binaries run cleanly.
 unset LD_LIBRARY_PATH
 unset LD_PRELOAD
+export HOME=/
 export PS1="\\[\\e[1;32m\\]\\u [ \\[\\e[0m\\]\\w\\[\\e[1;32m\\] ]\$ \\[\\e[0m\\]"
 
 clear
 
-# Locate a working su without depending on 'which'.
 SU=
 for c in \
     /debug_ramdisk/su \
     /data/adb/ksu/bin/su \
     /data/adb/ap/bin/su \
-    /system/bin/su \
     /system/xbin/su \
+    /system/bin/su \
     /sbin/su \
     /su/bin/su \
     su
 do
     if [ -x "$c" ]; then SU="$c"; break; fi
-    if command -v "$c" >/dev/null 2>&1; then SU="$c"; break; fi
 done
 [ -z "$SU" ] && SU=su
 
-# Prefer bundled bash; fall back to system sh if missing.
 SHELL_BIN="$BASH"
 [ -x "$SHELL_BIN" ] || SHELL_BIN=/system/bin/sh
 
-# Magisk supports: su -mm -c / su -mm -s
-# KernelSU / APatch often only support: su -c  (no -mm / -s)
-# Try several launch styles; first that works wins.
-try_exec() {
-    exec "$@"
-}
+echo "[*] SU=$SU"
+echo "[*] shell=$SHELL_BIN"
 
-# 1) Magisk-style global mount ns + shell
-"$SU" -mm -c "id -u" >/dev/null 2>&1 && try_exec "$SU" -mm -s "$SHELL_BIN"
-"$SU" -mm -c "id -u" >/dev/null 2>&1 && try_exec "$SU" -mm -c "exec '$SHELL_BIN'"
+# Magisk: su -mm keeps global mount namespace.
+if "$SU" -mm -c "id -u" >/dev/null 2>&1; then
+    if [ -x "$BASH" ]; then
+        exec "$SU" -mm -s "$BASH"
+    fi
+    exec "$SU" -mm
+fi
 
-# 2) Plain -c with bash (KernelSU / APatch)
-"$SU" -c "id -u" >/dev/null 2>&1 && try_exec "$SU" -c "exec '$SHELL_BIN'"
+# KernelSU / APatch: prefer handing the shell path to su (no -c quoting).
+# Fall back through common forms; print a clear hint on failure.
+if [ -x "$SHELL_BIN" ]; then
+    "$SU" "$SHELL_BIN" && exit $?
+    "$SU" -s "$SHELL_BIN" && exit $?
+    "$SU" -- "$SHELL_BIN" && exit $?
+    "$SU" -c "$SHELL_BIN" && exit $?
+fi
 
-# 3) Last resort: interactive su (user must grant prompt)
-try_exec "$SU"
+"$SU" && exit $?
+
+echo "[-] Root shell failed (Permission denied?)."
+echo "    In KernelSU/Magisk Manager, grant root to: com.zalexdev.stryker"
+echo "    Then reopen Terminal → Android SU."
+exec /system/bin/sh

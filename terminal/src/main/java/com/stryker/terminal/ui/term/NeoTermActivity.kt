@@ -38,6 +38,7 @@ import com.stryker.terminal.frontend.floating.TerminalDialog
 import com.stryker.terminal.frontend.session.terminal.*
 import com.stryker.terminal.frontend.session.view.TerminalViewClient
 import com.stryker.terminal.services.NeoTermService
+import java.io.File
 import com.stryker.terminal.ui.other.SettingsActivity
 import com.stryker.terminal.ui.other.WirelessDialogs
 import com.stryker.terminal.utils.FullScreenHelper
@@ -494,9 +495,11 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
+    val bash = File(NeoTermPath.BIN_PATH, "bash")
+    bash.setExecutable(true, false)
     val parameter = ShellParameter()
       .callback(sessionCallback)
-      .executablePath("${NeoTermPath.BIN_PATH}/bash")
+      .executablePath(if (bash.canExecute()) bash.absolutePath else "/system/bin/sh")
       .systemShell(true)
 
     val session = termService!!.createTermSession(parameter)
@@ -514,9 +517,13 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
+    // Launch via /system/bin/sh so exec never fails with EACCES on a non-+x script.
+    val script = File(NeoTermPath.BIN_PATH, "stryker-ch").absolutePath
     val parameter = ShellParameter()
       .callback(sessionCallback)
-      .executablePath("${NeoTermPath.BIN_PATH}/stryker-ch")
+      .executablePath("/system/bin/sh")
+      .arguments(arrayOf("/system/bin/sh", script))
+      .systemShell(true)
       .initialCommand("clear")
     val session = termService!!.createTermSession(parameter)
 
@@ -534,9 +541,11 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
+    val script = File(NeoTermPath.BIN_PATH, "android-su").absolutePath
     val parameter = ShellParameter()
       .callback(sessionCallback)
-      .executablePath("${NeoTermPath.BIN_PATH}/android-su")
+      .executablePath("/system/bin/sh")
+      .arguments(arrayOf("/system/bin/sh", script))
       .systemShell(true)
       .initialCommand("clear")
 

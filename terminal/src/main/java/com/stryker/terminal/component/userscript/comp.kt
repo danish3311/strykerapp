@@ -26,17 +26,29 @@ class UserScriptComponent : NeoComponent {
   override fun onServiceObtained() = checkForFiles()
 
   fun extractDefaultScript(context: Context) = kotlin.runCatching {
-    SuUtils.customCommand("mkdir -p ${NeoTermPath.USR_PATH}/")
-    SuUtils.customCommand("rm -rf ${NeoTermPath.BIN_PATH}/*")
+    val binReady = File(NeoTermPath.BIN_PATH, "bash").exists()
+      && File(NeoTermPath.BIN_PATH, "stryker-ch").exists()
+    if (!binReady) {
+      SuUtils.customCommand("mkdir -p ${NeoTermPath.USR_PATH}/")
+      context.extractAssetsDir("bin", NeoTermPath.BIN_PATH, overwrite = true)
+    }
+    // 0755 — do NOT pass decimal 448 to shell chmod (that is Os.chmod mode).
+    for (f in (binDir.listFiles() ?: emptyArray())) {
+      try {
+        Os.chmod(f.absolutePath, 493) // 0755
+      } catch (_: Exception) {
+        f.setExecutable(true, false)
+      }
+    }
 
     context.extractAssetsDir("scripts", NeoTermPath.USER_SCRIPT_PATH)
     scriptDir.listFiles()?.forEach {
-      Os.chmod(it.absolutePath, 448)
+      try {
+        Os.chmod(it.absolutePath, 493)
+      } catch (_: Exception) {
+        it.setExecutable(true, false)
+      }
     }
-
-    context.extractAssetsDir("bin", NeoTermPath.BIN_PATH)
-    SuUtils.customCommand("chmod 448 ${NeoTermPath.BIN_PATH}/*")
-
   }.onFailure {
     NLog.e("UserScript", "Failed to extract default user scripts: ${it.localizedMessage}")
   }
@@ -49,12 +61,12 @@ class UserScriptComponent : NeoComponent {
 
   private fun reloadScripts() {
     userScripts = (scriptDir.listFiles() ?: emptyArray())
-      .takeWhile { it.canExecute() }
+      .filter { it.canExecute() }
       .map { UserScript(it) }
       .toList()
 
     binFiles = (binDir.listFiles() ?: emptyArray())
-      .takeWhile { it.canExecute() }
+      .filter { it.canExecute() }
       .map { UserScript(it) }
       .toList()
   }

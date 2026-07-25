@@ -25,7 +25,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="mdk4 attack modes on your deauth interface. Use only on networks you own or have permission to test."
+            android:text="mdk4 attack modes. Pick targets from your last WiFi scan when needed. Authorized networks only."
             android:textColor="@color/grey"
             android:textSize="13sp" />
 

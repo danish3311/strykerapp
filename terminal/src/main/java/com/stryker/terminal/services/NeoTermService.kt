@@ -39,6 +39,8 @@ class NeoTermService : Service() {
 
     if (checkPrefix()) {
       resetApp()
+    } else {
+      ensureBinAssets()
     }
 
     createNotificationChannel()
@@ -50,17 +52,53 @@ class NeoTermService : Service() {
     return !PREFIX_FILE.isDirectory
   }
 
+  /** Re-extract launcher scripts when BIN_ASSET_VERSION changes (app upgrade). */
+  fun ensureBinAssets() {
+    val bin = NeoTermPath.BIN_PATH
+    val stamp = File(bin, ".stryker_bin_ver")
+    val needExtract = !stamp.exists()
+      || stamp.readText().trim() != NeoTermPath.BIN_ASSET_VERSION
+      || !File(bin, "stryker-ch").exists()
+      || !File(bin, "android-su").exists()
+      || !File(bin, "bash").exists()
+    if (needExtract) {
+      File(bin).mkdirs()
+      extractAssetsDir("bin", "$bin/", overwrite = true)
+      try {
+        stamp.writeText(NeoTermPath.BIN_ASSET_VERSION)
+      } catch (_: Exception) {
+      }
+    }
+    chmodBins(bin)
+  }
+
+  private fun chmodBins(bin: String) {
+    for (name in listOf("bash", "stryker-ch", "stryker-ch-inner", "android-su")) {
+      val f = File(bin, name)
+      if (f.exists()) {
+        f.setReadable(true, false)
+        f.setExecutable(true, false)
+      }
+    }
+    // Best-effort root chmod (may no-op if KernelSU not granted yet).
+    Shell.cmd(
+      "/system/bin/chmod 755 $bin/bash $bin/stryker-ch $bin/stryker-ch-inner $bin/android-su"
+    ).exec()
+  }
+
   fun resetApp() {
     val usr = NeoTermPath.USR_PATH
     val bin = NeoTermPath.BIN_PATH
     Runtime.getRuntime().exec("mkdir -p $usr/").waitFor()
     Shell.cmd("/system/bin/rm -rf $bin").exec()
-    Thread.sleep(1200)
-    extractAssetsDir("bin", "$bin/")
-    Thread.sleep(800)
-    Shell.cmd("/system/bin/chmod +x $bin/bash").exec()
-    Shell.cmd("/system/bin/chmod +x $bin/stryker-ch").exec()
-    Shell.cmd("/system/bin/chmod +x $bin/android-su").exec()
+    Thread.sleep(400)
+    File(bin).mkdirs()
+    extractAssetsDir("bin", "$bin/", overwrite = true)
+    try {
+      File(bin, ".stryker_bin_ver").writeText(NeoTermPath.BIN_ASSET_VERSION)
+    } catch (_: Exception) {
+    }
+    chmodBins(bin)
   }
 
   override fun onBind(intent: Intent): IBinder? {

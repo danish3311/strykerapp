@@ -1,0 +1,16 @@
+#!/system/bin/sh
+# Enter Alpine chroot with a login ash (optionally via setsid for job control).
+. /data/data/com.zalexdev.stryker/files/bootroot_env
+if [ -z "$MNT" ] || [ -z "$BUSYBOX" ]; then
+    echo "[-] bootroot_env did not set MNT/BUSYBOX"
+    exit 3
+fi
+if [ ! -d "$MNT/usr" ]; then
+    echo "[-] Chroot not mounted at $MNT — open Stryker app and wait for mount."
+    exit 4
+fi
+if [ -x "$MNT/usr/bin/setsid" ] || [ -x "$MNT/bin/setsid" ]; then
+    exec "$BUSYBOX" chroot "$MNT" setsid -c /bin/ash -l
+else
+    exec "$BUSYBOX" chroot "$MNT" /bin/ash -l
+fi

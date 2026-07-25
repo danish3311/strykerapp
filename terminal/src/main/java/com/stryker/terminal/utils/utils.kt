@@ -37,7 +37,15 @@ fun Long.formatSizeInKB(): String {
   }
 }
 
-fun Context.extractAssetsDir(assetDir: String, extractDir: String) = kotlin.runCatching {
+/**
+ * Extract assets from [assetDir] into [extractDir].
+ * @param overwrite when true, replace existing files (needed so updated shell launchers ship on upgrade).
+ */
+fun Context.extractAssetsDir(
+  assetDir: String,
+  extractDir: String,
+  overwrite: Boolean = false
+) = kotlin.runCatching {
   val targetDir = File(extractDir)
   if (!targetDir.isDirectory && !targetDir.mkdirs()) {
     throw java.io.IOException("Unable to create directory: $extractDir")
@@ -45,13 +53,15 @@ fun Context.extractAssetsDir(assetDir: String, extractDir: String) = kotlin.runC
   val assets = this.assets
   assets.list(assetDir)?.forEach { name ->
     val outFile = File(targetDir, name)
-    if (!outFile.exists()) {
+    if (overwrite || !outFile.exists()) {
       assets.open("$assetDir/$name").use { input ->
         FileOutputStream(outFile).use { output ->
           input.copyTo(output)
         }
       }
     }
+    // App-UID executable bit — do not rely on root `chmod` (KernelSU may not be granted yet).
+    outFile.setReadable(true, false)
     outFile.setExecutable(true, false)
   }
 }

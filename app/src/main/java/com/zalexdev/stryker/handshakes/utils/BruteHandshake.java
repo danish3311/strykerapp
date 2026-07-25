@@ -39,6 +39,13 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     public static final String ENGINE_AIRCRACK = "aircrack";
     public static final String ENGINE_HASHCAT = "hashcat";
 
+    /** Optional UI hooks — card stays alive even when log dialog is closed. */
+    public interface Listener {
+        void onCardProgress(String progressLine, String etaLine);
+        void onLogLine(String line);
+        void onStatus(String status);
+    }
+
     private static final Pattern PROGRESS = Pattern.compile(
             "\\[\\s*(\\d{1,2}:\\d{2}:\\d{2})\\s*]\\s*([\\d,]+)\\s*(?:/\\s*([\\d,]+))?\\s*keys?\\s+tested\\s*\\(\\s*([\\d.]+)\\s*k/s\\s*\\)",
             Pattern.CASE_INSENSITIVE);
@@ -67,6 +74,7 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     public Process process;
     public Logger logger;
     public String engine = ENGINE_AIRCRACK;
+    public Listener listener;
 
     private final AtomicBoolean killed = new AtomicBoolean(false);
     private long lastUiMs;
@@ -96,6 +104,19 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
         id = i;
         this.engine = engine == null ? ENGINE_AIRCRACK : engine;
         logger = new Logger();
+    }
+
+    public BruteHandshake setListener(Listener listener) {
+        this.listener = listener;
+        return this;
+    }
+
+    /** Re-bind UI after RecyclerView recycle; crack process keeps running. */
+    public void attachUi(TextView pr, TextView t, TextView log, TextView status) {
+        progress = pr;
+        time = t;
+        liveLog = log;
+        statusView = status;
     }
 
     @SuppressLint("WrongThread")
@@ -282,22 +303,26 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
             if (statusView != null) {
                 statusView.setText(statusText);
             }
-            if (progress != null) {
-                String card = "";
-                if (speed != null) card = speed + " k/s";
-                if (tried != null) {
-                    if (!card.isEmpty()) card += " · ";
-                    card += tried + (total != null && !total.equals("0") ? "/" + total : "");
-                }
-                if (currentKey != null && !currentKey.isEmpty()) {
-                    if (!card.isEmpty()) card += " · ";
-                    card += currentKey;
-                }
-                if (!card.isEmpty()) progress.setText(card);
+            String card = "";
+            if (speed != null) card = speed + " k/s";
+            if (tried != null) {
+                if (!card.isEmpty()) card += " · ";
+                card += tried + (total != null && !total.equals("0") ? "/" + total : "");
             }
-            if (time != null && timeLeft != null && !timeLeft.isEmpty()) {
+            if (currentKey != null && !currentKey.isEmpty()) {
+                if (!card.isEmpty()) card += " · ";
+                card += currentKey;
+            }
+            String eta = (timeLeft != null && !timeLeft.isEmpty()) ? ("ETA " + timeLeft) : null;
+            if (progress != null && !card.isEmpty()) progress.setText(card);
+            if (time != null && eta != null) {
                 time.setVisibility(TextView.VISIBLE);
-                time.setText("ETA " + timeLeft);
+                time.setText(eta);
+            }
+            if (listener != null) {
+                listener.onCardProgress(card.isEmpty() ? statusText : card, eta);
+                listener.onStatus(statusText);
+                if (appendToLog) listener.onLogLine(statusText.replace('\n', ' '));
             }
             if (liveLog != null && appendToLog) {
                 lastLogAppendMs = SystemClock.uptimeMillis();
@@ -323,6 +348,10 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
             if (statusView != null && line != null && line.startsWith("KEY FOUND")) {
                 statusView.setText(line);
             }
+            if (listener != null) {
+                if (line != null && line.startsWith("KEY FOUND")) listener.onStatus(line);
+                if (appendLog) listener.onLogLine(line);
+            }
             if (liveLog != null && appendLog) {
                 liveLog.append(line + "\n");
                 scrollLog();
@@ -337,26 +366,28 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     }
 
     private String buildCommand() {
+        // Paths from the adapter are already /sdcard/... forms.
         String cap = path.startsWith("/") ? path : "/sdcard/Stryker/captured/" + path;
         String wl = wordlist.startsWith("/") ? wordlist : "/sdcard/Stryker/wordlists/" + wordlist;
-        if (ENGINE_HASHCAT.equals(engine)) {
-            return exec + "'bash -lc " + shellQuote(
-                    "set -e; "
-                            + "CAP=" + shellQuote(cap) + "; WL=" + shellQuote(wl) + "; "
-                            + "OUT=/tmp/stryker_hs.hccapx; "
-                            + "if command -v cap2hccapx >/dev/null 2>&1; then cap2hccapx \"$CAP\" \"$OUT\"; "
-                            + "elif command -v aircrack-ng >/dev/null 2>&1; then aircrack-ng -j /tmp/stryker_hs \"$CAP\" >/dev/null; OUT=/tmp/stryker_hs.hccapx; fi; "
-                            + "hashcat -m 2500 -a 0 \"$OUT\" \"$WL\" --force --status --status-timer=1 2>&1"
-            ) + "'";
-        }
-        // -a2 = WPA/WPA2; echo 1 auto-picks first network if aircrack prompts;
-        // 2>&1 merges progress (often tty/stderr redraws) into the pipe we read.
-        return exec + "'sh -c \"echo 1 | aircrack-ng -a2 -w " + wl + " " + cap + " 2>&1\"'";
-    }
+        // Prefer /sdcard for chroot bind-mount.
+        cap = cap.replace("/storage/emulated/0/", "/sdcard/");
+        wl = wl.replace("/storage/emulated/0/", "/sdcard/");
 
-    private static String shellQuote(String s) {
-        if (s == null) return "''";
-        return "'" + s.replace("'", "'\\''") + "'";
+        if (ENGINE_HASHCAT.equals(engine)) {
+            // Flat command — nested quotes break chroot_exec/ash.
+            return exec + "'hashcat -m 2500 -a 0 " + cap + " " + wl + " --force --status --status-timer=1'";
+        }
+
+        // Keep quoting identical to the original working form:
+        //   chroot_exec 'aircrack-ng -w WORDLIST CAP'
+        // Nested sh -c / pipes caused: "syntax error: unterminated quoted string"
+        StringBuilder cmd = new StringBuilder("aircrack-ng -a2");
+        Matcher mac = Pattern.compile("([0-9A-Fa-f]{2}[-:]){5}[0-9A-Fa-f]{2}").matcher(path);
+        if (mac.find()) {
+            cmd.append(" -b ").append(mac.group().replace('-', ':'));
+        }
+        cmd.append(" -w ").append(wl).append(' ').append(cap);
+        return exec + "'" + cmd + "'";
     }
 
     public void kill() {

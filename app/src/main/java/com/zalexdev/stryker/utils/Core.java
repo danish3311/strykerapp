@@ -1063,6 +1063,42 @@ public class Core {
         }
         return devices;
     }
+
+    /** Persist last WiFi AP scan for jammer / attack target pickers. */
+    public void saveLastWifiScan(ArrayList<com.zalexdev.stryker.custom.WiFINetwork> networks) {
+        ArrayList<String> rows = new ArrayList<>();
+        if (networks != null) {
+            for (com.zalexdev.stryker.custom.WiFINetwork n : networks) {
+                if (n == null || n.getMac() == null || n.getMac().isEmpty()) continue;
+                // bssid\tssid\tchannel\tpower
+                rows.add(n.getMac() + "\t"
+                        + (n.getSsid() == null ? "" : n.getSsid().replace('\t', ' '))
+                        + "\t" + n.getChannel()
+                        + "\t" + n.getPower());
+            }
+        }
+        putListString("last_wifi_scan", rows);
+    }
+
+    public ArrayList<com.zalexdev.stryker.custom.WiFINetwork> getLastWifiScan() {
+        ArrayList<com.zalexdev.stryker.custom.WiFINetwork> out = new ArrayList<>();
+        for (String row : getListString("last_wifi_scan")) {
+            if (row == null || row.isEmpty()) continue;
+            String[] p = row.split("\t", -1);
+            if (p.length < 1 || p[0].isEmpty()) continue;
+            com.zalexdev.stryker.custom.WiFINetwork n = new com.zalexdev.stryker.custom.WiFINetwork();
+            n.setMac(p[0]);
+            if (p.length > 1) n.setSsid(p[1]);
+            if (p.length > 2) {
+                try { n.setChannel(Integer.parseInt(p[2])); } catch (Exception ignored) {}
+            }
+            if (p.length > 3) {
+                try { n.setPower(Integer.parseInt(p[3])); } catch (Exception ignored) {}
+            }
+            out.add(n);
+        }
+        return out;
+    }
     public ArrayList<String> getLatestIps(){
         ArrayList<Device> devices = getLastNetworkScan();
         ArrayList<String> ips = new ArrayList<>();

@@ -7,7 +7,7 @@ object DefaultValues {
 
   const val enableBell = false
   const val enableVibrate = true
-  const val enableExecveWrapper = true
+  const val enableExecveWrapper = false
   const val enableAutoCompletion = false
   const val enableFullScreen = false
   const val enableAutoHideToolbar = false
@@ -28,6 +28,8 @@ object NeoTermPath {
   const val ROOT_PATH = "/data/data/com.zalexdev.stryker/files"
   const val USR_PATH = "$ROOT_PATH/usr"
   const val BIN_PATH = "$USR_PATH/bin"
+  /** Bump when assets/bin scripts change so NeoTermService re-extracts on upgrade. */
+  const val BIN_ASSET_VERSION = "3"
   const val HOME_PATH = "/"
   const val APT_BIN_PATH = "$USR_PATH/bin/apt"
   const val LIB_PATH = "$USR_PATH/lib"

@@ -7,10 +7,11 @@
 #include <fcntl.h>
 
 static const char *rewrite_executable(const char *filename, char *buffer, int buffer_len) {
-    strcpy(buffer, "/data/data/com.stryker.terminal/files/usr/bin/");
+    strcpy(buffer, "/data/data/com.zalexdev.stryker/files/usr/bin/");
     char *bin_match = strstr(filename, "/bin/");
     if (bin_match == filename || bin_match == (filename + 4)) {
-        strncpy(buffer + 36, bin_match + 5, (size_t) (buffer_len - 37));
+        /* prefix length of "/data/data/com.zalexdev.stryker/files/usr/bin/" == 48 */
+        strncpy(buffer + 48, bin_match + 5, (size_t) (buffer_len - 49));
         filename = buffer;
     }
     return filename;
