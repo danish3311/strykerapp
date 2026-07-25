@@ -35,6 +35,7 @@ import com.zalexdev.stryker.utils.Core;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Matcher;
@@ -561,12 +562,43 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         ok.setOnClickListener(v -> {
             String newName = Objects.requireNonNull(valueEdit.getText()).toString().trim();
             if (newName.isEmpty() || newName.equals(displayName)) { dialog.dismiss(); return; }
+            if (!newName.toLowerCase(Locale.US).endsWith(".cap")
+                    && !newName.toLowerCase(Locale.US).endsWith(".pcap")) {
+                newName = newName + ".cap";
+            }
             File src = captureFile(path);
             File dst = captureFile(newName);
-            if (src.renameTo(dst)) {
-                hslist.set(position, newName);
+            if (dst.exists()) {
+                toaster("A file with that name already exists");
+                return;
+            }
+            boolean okRename = src.renameTo(dst);
+            if (!okRename) {
+                core.customCommand("mv -f '" + src.getAbsolutePath() + "' '" + dst.getAbsolutePath() + "'");
+                okRename = dst.exists() && !src.exists();
+            }
+            if (okRename) {
+                // Keep absolute path when list used absolute paths
+                String stored = path.startsWith("/") ? dst.getAbsolutePath() : newName;
+                HandshakeCrackRegistry.Job job = HandshakeCrackRegistry.get(path);
+                if (job != null) {
+                    HandshakeCrackRegistry.remove(path);
+                    HandshakeCrackRegistry.Job moved = new HandshakeCrackRegistry.Job(
+                            stored, job.mac, job.engine, job.notifId);
+                    moved.task = job.task;
+                    moved.running = job.running;
+                    moved.lastProgress = job.lastProgress;
+                    moved.lastEta = job.lastEta;
+                    moved.lastStatus = job.lastStatus;
+                    moved.appendLog(job.log.toString());
+                    HandshakeCrackRegistry.put(moved);
+                }
+                hslist.set(position, stored);
                 notifyItemChanged(position);
                 if (onChangeListener != null) onChangeListener.run();
+                toaster("Renamed to " + newName);
+            } else {
+                toaster("Rename failed");
             }
             dialog.dismiss();
         });

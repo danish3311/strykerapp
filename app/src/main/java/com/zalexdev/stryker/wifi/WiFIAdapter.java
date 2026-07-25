@@ -45,6 +45,7 @@ import com.zalexdev.stryker.utils.SimpleProcess;
 import com.zalexdev.stryker.utils.Utils;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -144,6 +145,21 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             adapter.wifi_model.setText(context.getString(R.string.wifi_card_model, wifi.getModel()));
             if (wifi.isVulnerable()) {
                 adapter.pixie_mark.setVisibility(View.VISIBLE);
+            }
+        }
+
+        if (adapter.wifi_clients != null) {
+            int cc = wifi.getClientCount();
+            if (cc > 0) {
+                adapter.wifi_clients.setVisibility(View.VISIBLE);
+                adapter.wifi_clients.setText(cc + (cc == 1 ? " client" : " clients")
+                        + (wifi.getClients().isEmpty() ? "" : " · " + String.join(", ",
+                        wifi.getClients().size() > 3
+                                ? wifi.getClients().subList(0, 3)
+                                : wifi.getClients())
+                        + (wifi.getClients().size() > 3 ? "…" : "")));
+            } else {
+                adapter.wifi_clients.setVisibility(View.GONE);
             }
         }
 
@@ -340,6 +356,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         }
         dialog.setCancelable(false);
         TextView name = dialog.findViewById(R.id.wifi_name);
+        TextView clientsLabel = dialog.findViewById(R.id.wifi_clients);
         TextView mac = dialog.findViewById(R.id.wifi_mac);
         TextView model = dialog.findViewById(R.id.wifi_model);
         TextView cancel = dialog.findViewById(R.id.wifi_cancel);
@@ -352,9 +369,6 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         outputtext.setMovementMethod(new ScrollingMovementMethod());
         View outputcard = dialog.findViewById(R.id.output_card);
 
-
-
-
         name.setText(network.getSsid());
         mac.setText(network.getMac());
         if (core.getBoolean("hide")){
@@ -366,8 +380,18 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         }else {
             model.setVisibility(View.GONE);
         }
+
+        // Show known clients under SSID (deauth / handshake refresh live)
+        if (clientsLabel != null) {
+            if (type == 3 || type == 7) {
+                seedClientsLabel(clientsLabel, network);
+            } else {
+                clientsLabel.setVisibility(View.GONE);
+            }
+        }
         final boolean[] finished = {false};
         cancel.setOnClickListener(view -> {
+            finished[0] = true;
             dialog.dismiss();
             if (pixie != null) {pixie.kill();}
             if (handshake != null) {handshake.setCanceled(true);}
@@ -376,13 +400,16 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             if (brutepin != null) {brutepin.kill();}
             if (deauther != null) {deauther.kill();}
             if (airodump != null) {airodump.kill();}
-            finished[0] = true;
             try{
                 aireplay.cancel();
             }catch (Exception ignored){
 
             }
             new Thread(() -> {
+                try {
+                    core.killWifiAttackTools();
+                } catch (Exception ignored) {
+                }
                 if (core.monitorManager.isMonitorModeEnabled(core.getHSInterface())) {
                     core.toaster(activity, "Disabling monitor mode...");
                     core.monitorManager.disableMonitorMode(core.getHSInterface());
@@ -542,33 +569,55 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
                                 @Override
                                 public void doOnBackground() {
-                                    try (BufferedReader br = new BufferedReader(new FileReader(core.getStorage() + "Stryker/wordlists/"+wordlistpath))) {
+                                    File wlFile;
+                                    if (wordlistpath != null && wordlistpath.startsWith("/")) {
+                                        wlFile = new File(wordlistpath);
+                                    } else {
+                                        wlFile = new File(core.getStorage() + "Stryker/wordlists/" + wordlistpath);
+                                    }
+                                    if (!wlFile.exists()) {
+                                        sendEvent("Wordlist not found: " + wlFile.getAbsolutePath());
+                                        return;
+                                    }
+                                    sendEvent("PSK attack (no monitor) · " + wlFile.getName());
+                                    try (BufferedReader br = new BufferedReader(new FileReader(wlFile))) {
                                         String psk;
                                         while ((psk = br.readLine()) != null) {
-                                            if (this.canceled){break;}
+                                            if (this.canceled) { break; }
+                                            psk = psk.trim();
+                                            if (psk.isEmpty()) continue;
                                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                                 createBruteNotification(context.getResources().getString(R.string.trying)+psk,0,1);
                                             }
                                             sendEvent(context.getResources().getString(R.string.trying)+ psk);
                                             int netId = core.connectWiFi2(network.getSsid(), psk);
-                                            try {
-                                                Thread.sleep(6000);
-                                            } catch (InterruptedException e) {
-                                                e.printStackTrace();
+                                            if (netId == -1) {
+                                                sendEvent("addNetwork failed — check WiFi/location permissions");
                                             }
-                                            if (checkIsSsidConnected(network.getSsid())) {
+                                            boolean ok = false;
+                                            for (int wait = 0; wait < 8 && !this.canceled; wait++) {
+                                                try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
+                                                if (core.isAssociatedToSsid(network.getSsid())
+                                                        || checkIsSsidConnected(network.getSsid())) {
+                                                    ok = true;
+                                                    break;
+                                                }
+                                            }
+                                            if (ok) {
                                                 result.setOK(true);
                                                 result.setPsk(psk);
                                                 result.setSsid(network.getSsid());
                                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                                     createBruteNotification(context.getResources().getString(R.string.succes)+psk,1,1);
                                                 }
+                                                sendEvent("Connected with: " + psk);
                                                 break;
-                                            }else {
+                                            } else {
                                                 core.deleteWifi(netId);
                                             }
                                         }
                                     } catch (IOException e) {
+                                        sendEvent("Error: " + e.getMessage());
                                         e.printStackTrace();
                                     }
                                 }
@@ -626,6 +675,16 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     boolean monitor2 = true;
 
                     ArrayList<String> clients = new ArrayList<>();
+                    if (network.getClients() != null) {
+                        for (String c : network.getClients()) {
+                            if (c != null && c.contains(":") && !clients.contains(c)) {
+                                clients.add(c);
+                            }
+                        }
+                    }
+                    if (!clients.isEmpty()) {
+                        refreshClientsLabel(clientsLabel, clients);
+                    }
                     String scanRaw = core.getString("wlan_scan");
                     String deauthRaw = core.getString("wlan_deauth");
                     if (deauthRaw == null) deauthRaw = "";
@@ -706,7 +765,13 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                         if (em.find()) second[0] = em.group(1).trim();
                                     }
                                     WifiDeauthEngine.collectClientsFromAirodump(
-                                            raw, bssid, clients, null);
+                                            raw, bssid, clients, line -> {
+                                                // live client discoveries go to the attack log
+                                                if (line != null && line.contains("client")) {
+                                                    sendEvent(line);
+                                                }
+                                            });
+                                    refreshClientsLabel(clientsLabel, clients);
                                     if (WifiDeauthEngine.lineHasHandshake(raw)) {
                                         sendEvent("[airodump] " + raw);
                                         sendEvent("Handshake seen by airodump!");
@@ -749,8 +814,10 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                         int round = 0;
                         while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()) {
                             round++;
+                            refreshClientsLabel(clientsLabel, clients);
                             sendEvent("--- deauth round #" + round
                                     + " · clients=" + clients.size()
+                                    + (clients.isEmpty() ? "" : " [" + String.join(", ", clients) + "]")
                                     + " · method=" + deauthMethod
                                     + " · elapsed=" + second[0] + " ---");
                             String burstLog;
@@ -841,6 +908,13 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             deauther.kill();
                         }
                     });
+                    new Thread(() -> {
+                        try { core.killWifiAttackTools(); } catch (Exception ignored) {}
+                        try {
+                            core.monitorManager.disableMonitorMode(core.getHSInterface());
+                            core.monitorManager.disableMonitorMode(core.getDeauthInterface());
+                        } catch (Exception ignored) {}
+                    }).start();
                 }
             };
             
@@ -1172,6 +1246,16 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             + " · locked ch " + channelStr + "\n");
                     outputtext.append("Mode: continuous flood (broadcast forever + directed clients)\n");
                     ArrayList<String> liveClients = new ArrayList<>();
+                    if (network.getClients() != null) {
+                        for (String c : network.getClients()) {
+                            if (c != null && c.contains(":") && !liveClients.contains(c)) {
+                                liveClients.add(c);
+                            }
+                        }
+                    }
+                    if (!liveClients.isEmpty()) {
+                        refreshClientsLabel(clientsLabel, liveClients);
+                    }
                     Set<String> directedStarted = new HashSet<>();
 
                     WifiDeauthEngine.LineSink uiSink = line -> activity.runOnUiThread(() -> {
@@ -1199,8 +1283,12 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                         @Override
                         public void onNewLine(String line) {
                             if (line == null || line.trim().isEmpty()) return;
+                            int before = liveClients.size();
                             WifiDeauthEngine.collectClientsFromAirodump(
                                     line, bssid, liveClients, uiSink);
+                            if (liveClients.size() != before) {
+                                refreshClientsLabel(clientsLabel, liveClients);
+                            }
                         }
                     };
                     airodump.setNoLog(true);
@@ -1252,6 +1340,9 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                 idleTicks++;
                             } else {
                                 idleTicks = 0;
+                                refreshClientsLabel(clientsLabel, snap);
+                                uiSink.onLine("[deauth] clients (" + snap.size() + "): "
+                                        + String.join(", ", snap));
                                 for (String client : snap) {
                                     if (finished[0]) break;
                                     String key = client.toLowerCase(Locale.US);
@@ -1299,6 +1390,52 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                 core.customCommand("svc wifi enable", true);
             }
         }).start();
+    }
+
+    /** Seed clients line under SSID from last monitor scan. */
+    private void seedClientsLabel(TextView clientsLabel, WiFINetwork network) {
+        if (clientsLabel == null || network == null) return;
+        ArrayList<String> known = network.getClients();
+        int cc = network.getClientCount();
+        if (known != null && !known.isEmpty()) {
+            refreshClientsLabel(clientsLabel, known);
+        } else if (cc > 0) {
+            clientsLabel.setVisibility(View.VISIBLE);
+            clientsLabel.setText(cc + (cc == 1 ? " client" : " clients") + " (from scan)");
+        } else {
+            clientsLabel.setVisibility(View.VISIBLE);
+            clientsLabel.setText("Clients: listening…");
+        }
+    }
+
+    /** Live update of clients listed under the WiFi name (deauth / handshake). */
+    private void refreshClientsLabel(TextView clientsLabel, Iterable<String> clients) {
+        if (clientsLabel == null || activity == null) return;
+        ArrayList<String> list = new ArrayList<>();
+        if (clients != null) {
+            for (String c : clients) {
+                if (c == null) continue;
+                String t = c.trim();
+                if (!t.isEmpty() && !list.contains(t)) list.add(t);
+            }
+        }
+        final boolean hide = core != null && core.getBoolean("hide");
+        activity.runOnUiThread(() -> {
+            clientsLabel.setVisibility(View.VISIBLE);
+            if (list.isEmpty()) {
+                clientsLabel.setText("Clients: listening…");
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append(list.size()).append(list.size() == 1 ? " client" : " clients").append(":\n");
+            int max = Math.min(list.size(), 8);
+            for (int i = 0; i < max; i++) {
+                if (i > 0) sb.append('\n');
+                sb.append(hide ? Core.HIDDEN_MAC : list.get(i));
+            }
+            if (list.size() > max) sb.append("\n… +").append(list.size() - max).append(" more");
+            clientsLabel.setText(sb.toString());
+        });
     }
 
     public WiFINetwork issuccess(ArrayList<String> out) {
@@ -1439,6 +1576,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         public TextView wifi_mac;
         public TextView wifi_model;
         public TextView wifi_power;
+        public TextView wifi_clients;
         public TextView wps_mark;
         public TextView five_mark;
         public TextView pixie_mark;
@@ -1456,6 +1594,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             wifi_mac = v.findViewById(R.id.wifi_bssid);
             wifi_model = v.findViewById(R.id.wifi_model);
             wifi_power = v.findViewById(R.id.wifi_power);
+            wifi_clients = v.findViewById(R.id.wifi_clients);
             iswps = v.findViewById(R.id.iswps);
             card = v.findViewById(R.id.item);
             icon = v.findViewById(R.id.icon_wifi);

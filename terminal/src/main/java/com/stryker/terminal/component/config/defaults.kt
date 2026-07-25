@@ -29,7 +29,7 @@ object NeoTermPath {
   const val USR_PATH = "$ROOT_PATH/usr"
   const val BIN_PATH = "$USR_PATH/bin"
   /** Bump when assets/bin scripts change so NeoTermService re-extracts on upgrade. */
-  const val BIN_ASSET_VERSION = "3"
+  const val BIN_ASSET_VERSION = "4"
   const val HOME_PATH = "/"
   const val APT_BIN_PATH = "$USR_PATH/bin/apt"
   const val LIB_PATH = "$USR_PATH/lib"

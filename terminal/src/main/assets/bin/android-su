@@ -1,11 +1,11 @@
 #!/system/bin/sh
-# Version: 2.3.0
+# Version: 2.4.0
 #
-# Root Android shell (NON-chroot). KernelSU/APatch/Magisk friendly.
-# Avoid nested `su -c "exec …"` which often returns "Permission denied"
-# under KernelSU when launched from a PTY.
+# Default Stryker Terminal entry: gain root, then enter Alpine chroot.
+# (Previously android-su was Android-only; users expect chroot tools here.)
 
 STRYKER_FILES=/data/data/com.zalexdev.stryker/files
+INNER="$STRYKER_FILES/usr/bin/stryker-ch-inner"
 BASH="$STRYKER_FILES/usr/bin/bash"
 
 export PATH=$STRYKER_FILES/usr/bin:$STRYKER_FILES/usr/sbin:/sbin:/system/bin:/system/xbin:/system/sbin:/su/bin:/magisk/.core/bin:/debug_ramdisk:/data/adb/ksu/bin:/data/adb/ap/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/odm/bin:/vendor/bin:.
@@ -31,32 +31,51 @@ do
 done
 [ -z "$SU" ] && SU=su
 
+echo "[*] SU=$SU"
+
+# Prefer chroot when bootroot_env exists (normal Stryker install).
+if [ -e "$STRYKER_FILES/bootroot_env" ]; then
+    if [ ! -f "$INNER" ]; then
+        cat > "$INNER" << 'INNER_EOF'
+#!/system/bin/sh
+. /data/data/com.zalexdev.stryker/files/bootroot_env
+if [ -z "$MNT" ] || [ -z "$BUSYBOX" ]; then
+    echo "[-] bootroot_env did not set MNT/BUSYBOX"
+    exit 3
+fi
+if [ ! -d "$MNT/usr" ]; then
+    echo "[-] Chroot not mounted at $MNT — open Stryker app and wait for mount."
+    exit 4
+fi
+if [ -x "$MNT/usr/bin/setsid" ] || [ -x "$MNT/bin/setsid" ]; then
+    exec "$BUSYBOX" chroot "$MNT" setsid -c /bin/ash -l
+else
+    exec "$BUSYBOX" chroot "$MNT" /bin/ash -l
+fi
+INNER_EOF
+    fi
+    chmod 755 "$INNER" 2>/dev/null || true
+    echo "[*] Entering Stryker chroot…"
+    if "$SU" -mm -c "id -u" >/dev/null 2>&1; then
+        exec "$SU" -mm "$INNER"
+    fi
+    "$SU" "$INNER" && exit $?
+    "$SU" -- "$INNER" && exit $?
+    "$SU" -c "$INNER" && exit $?
+    echo "[-] Chroot entry failed (Permission denied?)."
+    echo "    Grant root to com.zalexdev.stryker in KernelSU/Magisk."
+fi
+
+# Fallback: interactive Android root shell
 SHELL_BIN="$BASH"
 [ -x "$SHELL_BIN" ] || SHELL_BIN=/system/bin/sh
-
-echo "[*] SU=$SU"
-echo "[*] shell=$SHELL_BIN"
-
-# Magisk: su -mm keeps global mount namespace.
+echo "[*] Chroot unavailable — Android root shell"
 if "$SU" -mm -c "id -u" >/dev/null 2>&1; then
-    if [ -x "$BASH" ]; then
-        exec "$SU" -mm -s "$BASH"
-    fi
+    [ -x "$BASH" ] && exec "$SU" -mm -s "$BASH"
     exec "$SU" -mm
 fi
-
-# KernelSU / APatch: prefer handing the shell path to su (no -c quoting).
-# Fall back through common forms; print a clear hint on failure.
-if [ -x "$SHELL_BIN" ]; then
-    "$SU" "$SHELL_BIN" && exit $?
-    "$SU" -s "$SHELL_BIN" && exit $?
-    "$SU" -- "$SHELL_BIN" && exit $?
-    "$SU" -c "$SHELL_BIN" && exit $?
-fi
-
+"$SU" "$SHELL_BIN" && exit $?
+"$SU" -s "$SHELL_BIN" && exit $?
 "$SU" && exit $?
-
-echo "[-] Root shell failed (Permission denied?)."
-echo "    In KernelSU/Magisk Manager, grant root to: com.zalexdev.stryker"
-echo "    Then reopen Terminal → Android SU."
+echo "[-] Root denied for com.zalexdev.stryker"
 exec /system/bin/sh

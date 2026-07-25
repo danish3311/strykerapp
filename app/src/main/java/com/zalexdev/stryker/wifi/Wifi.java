@@ -95,6 +95,10 @@ public class Wifi extends Fragment {
     private Thread scanThread;
     private Thread attackThread;
     private AdvancedProcess pixieProcess;
+    private ScanWifiMonitor activeMonScan;
+    private MaterialButton monDurationBtn;
+    private MaterialButton monStopBtn;
+    private View monOptions;
 
     private void safeUi(Runnable r) {
         if (activity != null && isAdded() && alive.get()) {
@@ -179,7 +183,100 @@ public class Wifi extends Fragment {
             }
         });
         fabOption3.setOnClickListener(v -> runDeauth());
+
+        com.google.android.material.button.MaterialButtonToggleGroup modeGroup =
+                view.findViewById(R.id.wifi_scan_mode);
+        monOptions = view.findViewById(R.id.wifi_mon_options);
+        monDurationBtn = view.findViewById(R.id.wifi_mon_duration_btn);
+        monStopBtn = view.findViewById(R.id.wifi_mon_stop_btn);
+        if (monDurationBtn != null) {
+            int sec = core.getInt("wifi_mon_seconds");
+            if (sec == 0 && !core.getBoolean("wifi_mon_until_stop")) {
+                sec = 15;
+                core.putInt("wifi_mon_seconds", 15);
+            }
+            updateMonDurationLabel();
+            monDurationBtn.setOnClickListener(v -> pickMonDuration());
+        }
+        if (monStopBtn != null) {
+            monStopBtn.setOnClickListener(v -> {
+                if (activeMonScan != null) activeMonScan.stop();
+                monStopBtn.setVisibility(View.GONE);
+            });
+        }
+        if (modeGroup != null) {
+            boolean mon = core.getBoolean("wifi_scan_monitor");
+            modeGroup.check(mon ? R.id.wifi_mode_monitor : R.id.wifi_mode_station);
+            if (monOptions != null) {
+                monOptions.setVisibility(mon ? View.VISIBLE : View.GONE);
+            }
+            modeGroup.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+                if (!isChecked) return;
+                boolean isMon = checkedId == R.id.wifi_mode_monitor;
+                core.putBoolean("wifi_scan_monitor", isMon);
+                if (monOptions != null) {
+                    monOptions.setVisibility(isMon ? View.VISIBLE : View.GONE);
+                }
+            });
+        }
         return view;
+    }
+
+    private void updateMonDurationLabel() {
+        if (monDurationBtn == null) return;
+        if (core.getBoolean("wifi_mon_until_stop")) {
+            monDurationBtn.setText("Duration: until stop");
+        } else {
+            int sec = core.getInt("wifi_mon_seconds");
+            if (sec <= 0) sec = 15;
+            monDurationBtn.setText("Duration: " + sec + "s");
+        }
+    }
+
+    private void pickMonDuration() {
+        CharSequence[] items = new CharSequence[]{
+                "5 seconds", "10 seconds", "15 seconds", "30 seconds", "60 seconds",
+                "Until I stop", "Custom…"
+        };
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Monitor scan duration")
+                .setItems(items, (d, which) -> {
+                    if (which == 5) {
+                        core.putBoolean("wifi_mon_until_stop", true);
+                        updateMonDurationLabel();
+                        return;
+                    }
+                    if (which == 6) {
+                        final com.google.android.material.textfield.TextInputEditText edit =
+                                new com.google.android.material.textfield.TextInputEditText(context);
+                        edit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+                        edit.setHint("Seconds (5–300)");
+                        edit.setText(String.valueOf(Math.max(5, core.getInt("wifi_mon_seconds"))));
+                        new MaterialAlertDialogBuilder(context)
+                                .setTitle("Custom duration")
+                                .setView(edit)
+                                .setPositiveButton(android.R.string.ok, (dd, ww) -> {
+                                    try {
+                                        int s = Integer.parseInt(String.valueOf(edit.getText()).trim());
+                                        s = Math.max(5, Math.min(300, s));
+                                        core.putBoolean("wifi_mon_until_stop", false);
+                                        core.putInt("wifi_mon_seconds", s);
+                                        updateMonDurationLabel();
+                                    } catch (Exception ignored) {
+                                        core.toaster("Invalid number");
+                                    }
+                                })
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
+                        return;
+                    }
+                    int[] secs = {5, 10, 15, 30, 60};
+                    core.putBoolean("wifi_mon_until_stop", false);
+                    core.putInt("wifi_mon_seconds", secs[which]);
+                    updateMonDurationLabel();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     public void scan() {
@@ -220,6 +317,47 @@ public class Wifi extends Fragment {
                 }
 
                 list = new ScanWifi(wlan, core).execute().get();
+                if (core.getBoolean("wifi_scan_monitor")) {
+                    boolean untilStop = core.getBoolean("wifi_mon_until_stop");
+                    int sec = core.getInt("wifi_mon_seconds");
+                    if (sec <= 0) sec = 15;
+                    if (untilStop) sec = 0;
+                    final int duration = sec;
+                    safeUi(() -> {
+                        text1.setText("Monitor scan…");
+                        textSub.setText(untilStop
+                                ? "Counting clients — tap Stop scan when done"
+                                : ("Counting clients (~" + duration + "s)"));
+                        statusValue.setText("Monitor");
+                        if (monStopBtn != null) monStopBtn.setVisibility(View.VISIBLE);
+                    });
+                    String deauthRaw = core.getString("wlan_deauth");
+                    if (deauthRaw == null || deauthRaw.isEmpty()) deauthRaw = wlan;
+                    activeMonScan = new ScanWifiMonitor(deauthRaw, core, duration)
+                            .setProgressListener((snap, elapsed) -> safeUi(() -> {
+                                if (snap == null) return;
+                                textSub.setText((untilStop ? "Scanning… " : "")
+                                        + elapsed + "s · " + snap.size() + " APs"
+                                        + (untilStop ? " · tap Stop" : ""));
+                                if (!snap.isEmpty()) {
+                                    list = snap;
+                                    if (mainActivity != null) mainActivity.setNetworks(list);
+                                    mAdapter = new WiFIAdapter(context, activity, list);
+                                    mAdapter.setHasStableIds(true);
+                                    mRecyclerView.setAdapter(mAdapter);
+                                    renderListState(true);
+                                    countChip.setText(String.valueOf(list.size()));
+                                }
+                            }));
+                    ArrayList<WiFINetwork> monList = activeMonScan.run();
+                    activeMonScan = null;
+                    safeUi(() -> {
+                        if (monStopBtn != null) monStopBtn.setVisibility(View.GONE);
+                    });
+                    if (monList != null && !monList.isEmpty()) {
+                        list = monList;
+                    }
+                }
                 if (mainActivity != null) {
                     mainActivity.setNetworks(list);
                 }
@@ -234,6 +372,7 @@ public class Wifi extends Fragment {
                         }
                     }
                 }
+                if (list == null) list = new ArrayList<>();
                 while (list.isEmpty() && failedscancount < 5) {
                     if (failedscancount == 4) {
                         break;
@@ -851,6 +990,7 @@ public class Wifi extends Fragment {
                 resulttext.setText("Failed to capture handshake");
             }
             new Thread(() -> {
+                core.killWifiAttackTools();
                 core.monitorManager.disableMonitorMode(core.getHSInterface());
                 core.monitorManager.disableMonitorMode(core.getDeauthInterface());
             }).start();

@@ -55,6 +55,21 @@
             android:textStyle="bold" />
 
         <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/wifi_clients"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:lineSpacingExtra="2dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="Clients: —"
+            android:textColor="#1565C0"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+        <com.google.android.material.textview.MaterialTextView
             android:id="@+id/wifi_model"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

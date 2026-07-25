@@ -22,6 +22,9 @@ public class WiFINetwork {
     public String name = "";
     public boolean canceled = false;
     public boolean three = false;
+    /** Clients seen associated to this AP (monitor scan / airodump). */
+    public int clientCount = 0;
+    public ArrayList<String> clients = new ArrayList<>();
     public ArrayList<String> info = new ArrayList<>();
     public WiFINetwork() {
     }
@@ -141,6 +144,34 @@ public class WiFINetwork {
 
     public void setPin(String pin) {
         this.pin = pin;
+    }
+
+    public int getClientCount() {
+        return clientCount > 0 ? clientCount : (clients != null ? clients.size() : 0);
+    }
+
+    public void setClientCount(int clientCount) {
+        this.clientCount = clientCount;
+    }
+
+    public ArrayList<String> getClients() {
+        if (clients == null) clients = new ArrayList<>();
+        return clients;
+    }
+
+    public void setClients(ArrayList<String> clients) {
+        this.clients = clients != null ? clients : new ArrayList<>();
+        this.clientCount = this.clients.size();
+    }
+
+    public void addClient(String mac) {
+        if (mac == null || mac.isEmpty()) return;
+        if (clients == null) clients = new ArrayList<>();
+        String m = mac.trim().toLowerCase(java.util.Locale.US);
+        if (!clients.contains(m)) {
+            clients.add(m);
+            clientCount = clients.size();
+        }
     }
 
     public Boolean getOK() {

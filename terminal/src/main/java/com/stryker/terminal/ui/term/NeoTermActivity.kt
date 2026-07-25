@@ -517,8 +517,8 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
-    // Launch via /system/bin/sh so exec never fails with EACCES on a non-+x script.
-    val script = File(NeoTermPath.BIN_PATH, "stryker-ch").absolutePath
+    // Default: android-su → root then Alpine chroot (tools live there).
+    val script = File(NeoTermPath.BIN_PATH, "android-su").absolutePath
     val parameter = ShellParameter()
       .callback(sessionCallback)
       .executablePath("/system/bin/sh")
@@ -541,7 +541,8 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
-    val script = File(NeoTermPath.BIN_PATH, "android-su").absolutePath
+    // Explicit chroot helper (same end state as android-su when chroot is mounted).
+    val script = File(NeoTermPath.BIN_PATH, "stryker-ch").absolutePath
     val parameter = ShellParameter()
       .callback(sessionCallback)
       .executablePath("/system/bin/sh")
@@ -552,7 +553,7 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val session = termService!!.createTermSession(parameter)
     generateSessionName("Android")
 
-    session.mSessionName = sessionName ?: generateSessionName("ANDROID SU")
+    session.mSessionName = sessionName ?: generateSessionName("Chroot")
 
     val tab = createTab(session.mSessionName) as TermTab
     tab.termData.initializeSessionWith(session, sessionCallback, viewClient)

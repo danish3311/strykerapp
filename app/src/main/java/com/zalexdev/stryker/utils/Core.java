@@ -1064,17 +1064,69 @@ public class Core {
         return devices;
     }
 
+    /** Kill aireplay / airodump / mdk4 leftovers from WiFi attacks (host + chroot). */
+    public void killWifiAttackTools() {
+        try {
+            customCommand(
+                    "pkill -9 -f aireplay-ng; pkill -9 -f airodump-ng; pkill -9 -f mdk4; "
+                            + "killall -9 aireplay-ng airodump-ng mdk4 2>/dev/null; true",
+                    true);
+        } catch (Exception ignored) {
+        }
+        try {
+            customChrootCommand(
+                    "pkill -9 -f aireplay-ng; pkill -9 -f airodump-ng; pkill -9 -f mdk4; "
+                            + "killall -9 aireplay-ng airodump-ng mdk4 2>/dev/null; true");
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Prefer WifiInfo / iw link over dumpsys netstats for PSK checks. */
+    public boolean isAssociatedToSsid(String ssid) {
+        if (ssid == null || ssid.isEmpty()) return false;
+        try {
+            WifiManager wm = (WifiManager) context.getSystemService(WIFI_SERVICE);
+            if (wm != null) {
+                android.net.wifi.WifiInfo info = wm.getConnectionInfo();
+                if (info != null && info.getNetworkId() != -1) {
+                    String cur = info.getSSID();
+                    if (cur != null) {
+                        cur = cur.replace("\"", "").trim();
+                        if (cur.equals(ssid) || cur.equalsIgnoreCase(ssid)) {
+                            android.net.wifi.SupplicantState st = info.getSupplicantState();
+                            if (st == android.net.wifi.SupplicantState.COMPLETED
+                                    || st == android.net.wifi.SupplicantState.ASSOCIATED) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            ArrayList<String> out = customCommand(
+                    "dumpsys wifi | grep -i 'mWifiInfo\\|SSID:' | head -n 20", true);
+            for (String line : out) {
+                if (line != null && line.contains(ssid)) return true;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
     /** Persist last WiFi AP scan for jammer / attack target pickers. */
     public void saveLastWifiScan(ArrayList<com.zalexdev.stryker.custom.WiFINetwork> networks) {
         ArrayList<String> rows = new ArrayList<>();
         if (networks != null) {
             for (com.zalexdev.stryker.custom.WiFINetwork n : networks) {
                 if (n == null || n.getMac() == null || n.getMac().isEmpty()) continue;
-                // bssid\tssid\tchannel\tpower
+                // bssid\tssid\tchannel\tpower\tclients
                 rows.add(n.getMac() + "\t"
                         + (n.getSsid() == null ? "" : n.getSsid().replace('\t', ' '))
                         + "\t" + n.getChannel()
-                        + "\t" + n.getPower());
+                        + "\t" + n.getPower()
+                        + "\t" + n.getClientCount());
             }
         }
         putListString("last_wifi_scan", rows);
@@ -1094,6 +1146,9 @@ public class Core {
             }
             if (p.length > 3) {
                 try { n.setPower(Integer.parseInt(p[3])); } catch (Exception ignored) {}
+            }
+            if (p.length > 4) {
+                try { n.setClientCount(Integer.parseInt(p[4])); } catch (Exception ignored) {}
             }
             out.add(n);
         }

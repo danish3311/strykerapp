@@ -16,7 +16,8 @@ public abstract class AdvancedProcess {
 
     public static Activity activity;
     public static Context context;
-    public static Process process;
+    /** Prefer instance process — static shared Process caused wrong kills. */
+    public Process process;
     public static Core core;
     public InputStream output;
     public InputStream error;
@@ -34,7 +35,7 @@ public abstract class AdvancedProcess {
         AdvancedProcess.activity = activity;
         AdvancedProcess.context = context;
         core = new Core(context);
-        process = core.generateSuProcess();
+        this.process = core.generateSuProcess();
         this.cmd = command;
         this.tool = LogTool.classify(command);
         this.chroot = chroot;
@@ -49,7 +50,7 @@ public abstract class AdvancedProcess {
         AdvancedProcess.activity = activity;
         AdvancedProcess.context = context;
         core = new Core(context);
-        process = core.generateSuProcess();
+        this.process = core.generateSuProcess();
         this.cmd = command;
         this.tool = LogTool.classify(command);
         this.chroot = chroot;
@@ -146,10 +147,22 @@ public abstract class AdvancedProcess {
     }
 
     public void kill() {
+        running = false;
         try {
-            process.destroy();
+            if (process != null) {
+                process.destroy();
+                try {
+                    process.destroyForcibly();
+                } catch (Throwable ignored) {
+                }
+            }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+        // Ensure aireplay/airodump/mdk4 children die when Stop is pressed
+        try {
+            if (core != null) core.killWifiAttackTools();
+        } catch (Exception ignored) {
         }
     }
 
