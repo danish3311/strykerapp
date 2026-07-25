@@ -56,7 +56,7 @@ public class HandshakeStorage extends Fragment {
         context = getContext();
         activity = getActivity();
         core = new Core(context);
-        core.customCommand("mkdir " + CAPTURE_DIR);
+        core.customCommand("mkdir -p '" + CAPTURE_DIR + "'", true);
 
         recyclerView = view.findViewById(R.id.hs_list);
         emptyCard = view.findViewById(R.id.hs_empty_card);

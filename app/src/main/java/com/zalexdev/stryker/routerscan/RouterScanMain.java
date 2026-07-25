@@ -99,7 +99,7 @@ public class RouterScanMain extends Fragment {
                 core.toaster("RScan Not Installed!");
             }
             core.threadChrootCommand("apk add libcrypto1.1");
-            core.threadChrootCommand("mkdir /sdcard/Stryker/rs");
+            core.threadChrootCommand("mkdir -p /sdcard/Stryker/rs");
             core.threadChrootCommand("cp /data/local/stryker/release/CORE/RS/* /sdcard/Stryker/rs");
             new Thread(() -> com.zalexdev.stryker.routerscan.utils.AuthLists.ensureDeployed(
                     getContext())).start();

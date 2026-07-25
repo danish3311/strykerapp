@@ -86,8 +86,10 @@ public class MonitorManager {
     }
 
     /**
-     * Force the live monitor iface onto {@code channel}. Prefer the airmon-ng
-     * renamed {@code ifcmon} name when present.
+     * Best-effort channel lock. Many phone drivers (esp. internal wlan0 /
+     * KernelSU setups) reject {@code iwconfig} and sometimes {@code iw set
+     * channel} with "Set Frequency" / Operation not supported — that is OK.
+     * airodump-ng {@code -c} and aireplay {@code --ignore-negative-one} still work.
      */
     public void lockChannel(String interfaceName, String channel) {
         if (channel == null) {
@@ -99,10 +101,62 @@ public class MonitorManager {
             return;
         }
         String iface = resolveMonitorIface(interfaceName);
-        core.customChrootCommand("iw dev " + iface + " set channel " + ch);
-        // Some drivers need a short hop via freq set; ignore failures.
-        core.customChrootCommand("iwconfig " + iface + " channel " + ch);
-        logger.writeLine("Locked " + iface + " to channel " + ch, 1);
+        if (iface == null || iface.isEmpty()) {
+            return;
+        }
+
+        // Prefer nl80211. Never use iwconfig — it spam-logs
+        // "Error for wireless request Set Frequency (8B04)" on modern drivers.
+        ArrayList<String> out = core.customChrootCommand(
+                "iw dev " + iface + " set channel " + ch + " 2>&1", true);
+        boolean ok = !looksUnsupported(out);
+        if (!ok) {
+            int mhz = channelToMhz(ch);
+            if (mhz > 0) {
+                out = core.customChrootCommand(
+                        "iw dev " + iface + " set freq " + mhz + " 2>&1", true);
+                ok = !looksUnsupported(out);
+            }
+        }
+        if (ok) {
+            logger.writeLine("Locked " + iface + " to channel " + ch, 1);
+        } else {
+            // Soft failure: rely on airodump -c / aireplay --ignore-negative-one
+            logger.writeLine("Channel lock unsupported on " + iface
+                    + " (ch " + ch + ") — continuing; tools will pin via -c", 2);
+        }
+    }
+
+    private static boolean looksUnsupported(ArrayList<String> out) {
+        if (out == null || out.isEmpty()) {
+            return false; // no error lines → assume ok
+        }
+        for (String line : out) {
+            if (line == null) continue;
+            String l = line.toLowerCase();
+            if (l.contains("set frequency")
+                    || l.contains("operation not supported")
+                    || l.contains("command failed")
+                    || l.contains("invalid argument")
+                    || l.contains("no such device")
+                    || l.contains("device busy")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 802.11 channel → MHz. Returns 0 if unknown. */
+    static int channelToMhz(String channel) {
+        try {
+            int ch = Integer.parseInt(channel.trim());
+            if (ch == 14) return 2484;
+            if (ch >= 1 && ch <= 13) return 2407 + ch * 5;
+            if (ch >= 36 && ch <= 165) return 5000 + ch * 5;
+            return 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     public String resolveMonitorIface(String interfaceName) {

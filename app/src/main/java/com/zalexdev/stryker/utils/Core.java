@@ -698,16 +698,35 @@ public class Core {
     }
     public boolean checkMagiskNotification(){
         reCreateProcess();
-        if (!getBoolean("offed")){
+        if (getBoolean("offed")) {
+            return false;
+        }
+        // KernelSU / APatch have no Magisk policies table — never query it.
+        if (!hasMagiskPoliciesTable()) {
+            return false;
+        }
         String cmd = "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE package_name='com.zalexdev.stryker';\"";
         boolean b = Core.contains(customCommand(cmd),"1");
         if (!b) {
             cmd = "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE uid='"+android.os.Process.myUid()+"';\"";
             b = Core.contains(customCommand(cmd),"1");
         }
-        return b;}else{
+        return b;
+    }
+
+    /** True only when Magisk's sqlite policies schema is present. */
+    public boolean hasMagiskPoliciesTable() {
+        if (!checkFile("/data/adb/magisk.db")) {
             return false;
         }
+        ArrayList<String> out = customCommand(
+                "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db "
+                        + "\".tables\"", true);
+        if (out == null) return false;
+        for (String line : out) {
+            if (line != null && line.contains("policies")) return true;
+        }
+        return false;
     }
 
     public boolean checkRoot(){
@@ -946,8 +965,7 @@ public class Core {
         customCommand("rm -rf " + file);
     }
     public void createFolder(@NonNull String folder){
-        customCommand("mkdir " + folder);
-
+        customCommand("mkdir -p '" + folder + "'", true);
     }
     public void chmodFolder(@NonNull String folder){
         customCommand("chmod 777 -R " + folder);
@@ -1146,17 +1164,22 @@ public class Core {
     }
 
     public void disableMagiskNotification() {
-
-                if (contains(customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
-                        + "/data/adb/magisk.db"
-                        + " \"UPDATE policies SET logging='0',notification='0' WHERE package_name='"
-                        + "com.zalexdev.stryker"
-                        + "';\""), "no such"))
-                {customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
-                                        + "/data/adb/magisk.db"
-                                        + " \"UPDATE policies SET logging='0',notification='0' WHERE uid='"
-                                        + android.os.Process.myUid()
-                                        + "';\"");}
+        if (!hasMagiskPoliciesTable()) {
+            putBoolean("offed", true);
+            return;
+        }
+        ArrayList<String> out = customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
+                + "/data/adb/magisk.db"
+                + " \"UPDATE policies SET logging='0',notification='0' WHERE package_name='"
+                + "com.zalexdev.stryker"
+                + "';\"", true);
+        if (contains(out, "no such")) {
+            customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
+                    + "/data/adb/magisk.db"
+                    + " \"UPDATE policies SET logging='0',notification='0' WHERE uid='"
+                    + android.os.Process.myUid()
+                    + "';\"", true);
+        }
     }
 
 

