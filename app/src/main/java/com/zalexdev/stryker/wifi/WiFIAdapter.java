@@ -765,10 +765,10 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                         if (em.find()) second[0] = em.group(1).trim();
                                     }
                                     WifiDeauthEngine.collectClientsFromAirodump(
-                                            raw, bssid, clients, line -> {
+                                            raw, bssid, clients, msg -> {
                                                 // live client discoveries go to the attack log
-                                                if (line != null && line.contains("client")) {
-                                                    sendEvent(line);
+                                                if (msg != null && msg.contains("client")) {
+                                                    sendEvent(msg);
                                                 }
                                             });
                                     refreshClientsLabel(clientsLabel, clients);
