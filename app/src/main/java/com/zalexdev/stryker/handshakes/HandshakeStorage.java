@@ -97,8 +97,17 @@ public class HandshakeStorage extends Fragment {
         adapter = new HandshakesAdapter(context, activity, files);
         adapter.setOnChangeListener(this::updateStats);
         recyclerView.setAdapter(adapter);
-
+        adapter.consumePendingLogRequest();
         updateStats();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
+            adapter.consumePendingLogRequest();
+        }
     }
 
     private void updateStats() {

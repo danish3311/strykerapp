@@ -35,8 +35,6 @@ import com.zalexdev.stryker.utils.Core;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Matcher;
@@ -51,24 +49,7 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
     public Activity activity;
     public Core core;
     public Runnable onChangeListener;
-    public int id = 0;
-
-    /** Active crack jobs keyed by capture path — survive scroll / log close. */
-    private final Map<String, BruteJob> activeJobs = new HashMap<>();
-
-    private static final class BruteJob {
-        BruteHandshake task;
-        Dialog logDialog;
-        TextView liveLog;
-        TextView statusView;
-        /** Currently bound card views (updated on recycle). */
-        TextView cardProgress;
-        TextView cardEta;
-        String mac;
-        String lastProgress = "";
-        String lastEta = "";
-        volatile boolean running = true;
-    }
+    public int id = 100;
 
     public HandshakesAdapter(Context context, Activity activity, ArrayList<String> hsList) {
         this.context = context;
@@ -79,6 +60,16 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
 
     public void setOnChangeListener(Runnable listener) {
         this.onChangeListener = listener;
+    }
+
+    /** Called by HandshakeStorage after reload to open Logs from a notification. */
+    public void consumePendingLogRequest() {
+        String path = HandshakeCrackRegistry.consumePendingShowLogs();
+        if (path == null) return;
+        HandshakeCrackRegistry.Job job = HandshakeCrackRegistry.get(path);
+        if (job != null && job.running) {
+            HandshakeCrackRegistry.showLogDialog(activity, context, job);
+        }
     }
 
     @NonNull
@@ -95,12 +86,12 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         String displayName = new File(path).getName();
 
         // Detach recycled views from any previous job before rebinding
-        for (BruteJob j : activeJobs.values()) {
+        for (HandshakeCrackRegistry.Job j : HandshakeCrackRegistry.snapshot().values()) {
             if (j.cardProgress == h.progress || j.cardEta == h.timeLeft) {
                 j.cardProgress = null;
                 j.cardEta = null;
                 if (j.task != null) {
-                    j.task.attachUi(null, null, j.liveLog, j.statusView);
+                    j.task.attachUi(null, null, null, null);
                 }
             }
         }
@@ -126,7 +117,7 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
 
         h.name.setText(displayName);
 
-        BruteJob job = activeJobs.get(path);
+        HandshakeCrackRegistry.Job job = HandshakeCrackRegistry.get(path);
         if (job != null && job.running) {
             bindCrackingUi(h, path, job);
             h.overflow.setOnClickListener(v -> showOverflow(v, position, path, displayName, finalMac));
@@ -139,20 +130,23 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
             h.stateChip.setTextColor(Color.parseColor("#388E3C"));
             h.progress.setText(context.getResources().getString(R.string.pass_founded) + stored);
             h.progress.setTextColor(Color.parseColor("#388E3C"));
-            h.itemView.setOnClickListener(v -> copyPassword(stored));
+            h.itemView.setOnClickListener(v -> showDetails(path, displayName, finalMac));
         } else {
             h.progress.setTextColor(Color.parseColor("#9E9E9E"));
             File f = captureFile(path);
             if (f.exists()) {
-                h.progress.setText(humanSize(f.length()));
+                h.progress.setText(humanSize(f.length()) + "  ·  tap for details");
+            } else {
+                h.progress.setText("tap for details");
             }
+            h.itemView.setOnClickListener(v -> showDetails(path, displayName, finalMac));
         }
 
         h.brute.setOnClickListener(v -> startBrute(h, path, finalMac));
         h.overflow.setOnClickListener(v -> showOverflow(v, position, path, displayName, finalMac));
     }
 
-    private void bindCrackingUi(ViewHolder h, String path, BruteJob job) {
+    private void bindCrackingUi(ViewHolder h, String path, HandshakeCrackRegistry.Job job) {
         h.brute.setVisibility(View.GONE);
         h.logs.setVisibility(View.VISIBLE);
         h.cancel.setVisibility(View.VISIBLE);
@@ -174,29 +168,16 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         job.cardProgress = h.progress;
         job.cardEta = h.timeLeft;
         if (job.task != null) {
-            job.task.attachUi(h.progress, h.timeLeft, job.liveLog, job.statusView);
+            job.task.attachUi(h.progress, h.timeLeft, null, null);
         }
-        h.logs.setOnClickListener(v -> showLogDialog(job));
+        h.logs.setOnClickListener(v -> HandshakeCrackRegistry.showLogDialog(activity, context, job));
         h.cancel.setOnClickListener(v -> stopBrute(path, h));
-        h.itemView.setOnClickListener(v -> showLogDialog(job));
+        h.itemView.setOnClickListener(v -> showDetails(path, new File(path).getName(), job.mac));
         h.brute.setOnClickListener(null);
     }
 
-    private void showLogDialog(BruteJob job) {
-        if (job == null || job.logDialog == null || activity == null) return;
-        if (activity.isFinishing()) return;
-        try {
-            if (!job.logDialog.isShowing()) job.logDialog.show();
-        } catch (Exception ignored) {
-        }
-    }
-
     private void stopBrute(String path, ViewHolder h) {
-        BruteJob job = activeJobs.get(path);
-        if (job == null) return;
-        job.running = false;
-        if (job.task != null) job.task.kill();
-        activeJobs.remove(path);
+        HandshakeCrackRegistry.stop(path, context);
         h.cancel.setVisibility(View.GONE);
         h.logs.setVisibility(View.GONE);
         h.brute.setVisibility(View.VISIBLE);
@@ -204,24 +185,75 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         h.timeLeft.setVisibility(View.GONE);
         h.progress.setText(R.string.hs_crack_stopped);
         h.progress.setTextColor(Color.parseColor("#9E9E9E"));
-        h.itemView.setOnClickListener(null);
-        try {
-            if (job.logDialog != null && job.logDialog.isShowing()) job.logDialog.dismiss();
-        } catch (Exception ignored) {
+        h.itemView.setOnClickListener(v -> {
+            String mac = path;
+            Matcher m = MAC_PATTERN.matcher(path);
+            if (m.find()) mac = m.group(0);
+            showDetails(path, new File(path).getName(), mac);
+        });
+        int pos = hslist.indexOf(path);
+        if (pos >= 0) notifyItemChanged(pos);
+    }
+
+    private void showDetails(String path, String displayName, String mac) {
+        File f = captureFile(path);
+        String stored = core.getString(mac);
+        HandshakeCrackRegistry.Job job = HandshakeCrackRegistry.get(path);
+        boolean cracking = job != null && job.running;
+
+        StringBuilder body = new StringBuilder();
+        body.append("File: ").append(displayName).append('\n');
+        body.append("BSSID: ").append(mac != null ? mac : "—").append('\n');
+        if (f.exists()) {
+            body.append("Size: ").append(humanSize(f.length())).append('\n');
+            body.append("Path: ").append(f.getAbsolutePath()).append('\n');
         }
+        body.append('\n');
+        if (cracking) {
+            body.append("Status: CRACKING (").append(job.engine).append(")\n");
+            body.append("Progress: ").append(job.lastProgress).append('\n');
+            body.append("ETA: ").append(job.lastEta).append('\n');
+        } else if (stored != null && !stored.isEmpty()) {
+            body.append("Status: CRACKED\n");
+            body.append("Password: ").append(stored).append('\n');
+        } else {
+            body.append("Status: Not cracked\n");
+        }
+
+        MaterialAlertDialogBuilder b = new MaterialAlertDialogBuilder(context)
+                .setTitle("Handshake details")
+                .setMessage(body.toString())
+                .setNegativeButton(android.R.string.ok, null);
+        if (cracking) {
+            b.setPositiveButton(R.string.hs_view_logs, (d, w) ->
+                    HandshakeCrackRegistry.showLogDialog(activity, context, job));
+            b.setNeutralButton(R.string.hs_action_stop, (d, w) -> {
+                HandshakeCrackRegistry.stop(path, context);
+                int pos = hslist.indexOf(path);
+                if (pos >= 0) notifyItemChanged(pos);
+            });
+        } else if (stored != null && !stored.isEmpty()) {
+            b.setPositiveButton(R.string.hs_password_copy, (d, w) -> copyPassword(stored));
+        }
+        b.show();
     }
 
     private void showOverflow(View anchor, int position, String path, String displayName, String mac) {
         PopupMenu menu = new PopupMenu(context, anchor);
         String pwd = core.getString(mac);
         boolean cracked = pwd != null && !pwd.isEmpty();
+        menu.getMenu().add(0, 6, 0, R.string.hs_details);
         if (cracked) {
-            menu.getMenu().add(0, 5, 0, R.string.hs_password_copy);
+            menu.getMenu().add(0, 5, 1, R.string.hs_password_copy);
         }
-        menu.getMenu().add(0, 1, 1, R.string.hs_action_upload);
-        menu.getMenu().add(0, 2, 2, R.string.hs_action_share);
-        menu.getMenu().add(0, 3, 3, R.string.hs_action_rename);
-        menu.getMenu().add(0, 4, 4, R.string.hs_action_delete);
+        if (HandshakeCrackRegistry.isRunning(path)) {
+            menu.getMenu().add(0, 7, 2, R.string.hs_view_logs);
+            menu.getMenu().add(0, 8, 3, R.string.hs_action_stop);
+        }
+        menu.getMenu().add(0, 1, 4, R.string.hs_action_upload);
+        menu.getMenu().add(0, 2, 5, R.string.hs_action_share);
+        menu.getMenu().add(0, 3, 6, R.string.hs_action_rename);
+        menu.getMenu().add(0, 4, 7, R.string.hs_action_delete);
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1: askEmailAndUpload(path, displayName); return true;
@@ -229,6 +261,16 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
                 case 3: renameFile(position, path, displayName); return true;
                 case 4: deleteFile(position, path, displayName); return true;
                 case 5: copyPassword(pwd); return true;
+                case 6: showDetails(path, displayName, mac); return true;
+                case 7: {
+                    HandshakeCrackRegistry.Job j = HandshakeCrackRegistry.get(path);
+                    if (j != null) HandshakeCrackRegistry.showLogDialog(activity, context, j);
+                    return true;
+                }
+                case 8:
+                    HandshakeCrackRegistry.stop(path, context);
+                    notifyItemChanged(position);
+                    return true;
                 default: return false;
             }
         });
@@ -280,9 +322,12 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
     }
 
     private void launchBrute(ViewHolder h, String path, String finalMac, String wordlistPath, String engine) {
-        if (activeJobs.containsKey(path)) {
+        if (HandshakeCrackRegistry.isRunning(path)) {
             toaster(context.getString(R.string.hs_cracking_bg));
-            showLogDialog(activeJobs.get(path));
+            HandshakeCrackRegistry.Job existing = HandshakeCrackRegistry.get(path);
+            if (existing != null) {
+                HandshakeCrackRegistry.showLogDialog(activity, context, existing);
+            }
             return;
         }
 
@@ -298,50 +343,30 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         h.cancel.setVisibility(View.VISIBLE);
         h.progress.setText(R.string.hs_progress_starting);
 
-        // Log window is optional — crack runs without forcing it open.
-        final Dialog logDialog = new Dialog(context);
-        logDialog.setContentView(R.layout.dialog_hs_brute_log);
-        Window w = logDialog.getWindow();
-        if (w != null) {
-            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            w.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        }
-        TextView liveLog = logDialog.findViewById(R.id.hs_brute_log);
-        TextView statusView = logDialog.findViewById(R.id.hs_brute_status);
-        TextView logTitle = logDialog.findViewById(R.id.hs_brute_log_title);
-        MaterialButton hideLog = logDialog.findViewById(R.id.hs_brute_log_hide);
-        logTitle.setText("Cracking · " + engine);
-        liveLog.setMovementMethod(new android.text.method.ScrollingMovementMethod());
-        // Close only hides the UI — does NOT stop the crack.
-        hideLog.setOnClickListener(v -> {
-            try { logDialog.dismiss(); } catch (Exception ignored) {}
-        });
-        logDialog.setCancelable(true);
-        logDialog.setCanceledOnTouchOutside(true);
-        logDialog.setOnCancelListener(d -> { /* keep cracking */ });
-
-        final BruteJob job = new BruteJob();
-        job.logDialog = logDialog;
-        job.liveLog = liveLog;
-        job.statusView = statusView;
-        job.mac = finalMac;
+        id++;
+        final int notifId = id;
+        final HandshakeCrackRegistry.Job job =
+                new HandshakeCrackRegistry.Job(path, finalMac, engine, notifId);
         job.lastProgress = context.getString(R.string.hs_progress_starting);
         job.lastEta = "ETA …";
-        activeJobs.put(path, job);
+        job.cardProgress = h.progress;
+        job.cardEta = h.timeLeft;
+        HandshakeCrackRegistry.put(job);
 
-        h.logs.setOnClickListener(v -> showLogDialog(job));
-        h.itemView.setOnClickListener(v -> showLogDialog(job));
+        h.logs.setOnClickListener(v ->
+                HandshakeCrackRegistry.showLogDialog(activity, context, job));
+        h.itemView.setOnClickListener(v -> showDetails(path, new File(path).getName(), finalMac));
         h.cancel.setOnClickListener(v -> stopBrute(path, h));
 
         toaster(context.getString(R.string.hs_cracking_bg));
 
         new Thread(() -> {
             try {
-                id++;
                 String capRel = path.replace(core.getStorage(), "/sdcard/");
                 String wlRel = wordlistPath.replace(core.getStorage(), "/sdcard/");
                 BruteHandshake br = new BruteHandshake(capRel, wlRel, core, activity, context,
-                        h.progress, h.timeLeft, liveLog, statusView, id, engine);
+                        h.progress, h.timeLeft, null, null, notifId, engine);
+                br.setCapturePath(path).setNotifId(notifId);
                 br.setListener(new BruteHandshake.Listener() {
                     @Override
                     public void onCardProgress(String progressLine, String etaLine) {
@@ -360,45 +385,46 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
 
                     @Override
                     public void onLogLine(String line) {
+                        job.appendLog(line);
                     }
 
                     @Override
                     public void onStatus(String status) {
+                        if (status != null) job.lastStatus = status;
                     }
                 });
                 job.task = br;
-                job.cardProgress = h.progress;
-                job.cardEta = h.timeLeft;
+
+                // Seed notification so actions appear immediately
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    br.CreateNotification(engine + " · cracking", new File(path).getName(), 0, 0);
+                }
 
                 WiFINetwork net = br.executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
                 activity.runOnUiThread(() -> {
-                    BruteJob finished = activeJobs.remove(path);
-                    if (finished != null) finished.running = false;
-                    applyFinished(path, finalMac, net, finished);
+                    HandshakeCrackRegistry.remove(path);
+                    job.running = false;
+                    applyFinished(path, finalMac, net);
                 });
             } catch (ExecutionException | InterruptedException e) {
                 e.printStackTrace();
                 activity.runOnUiThread(() -> {
-                    activeJobs.remove(path);
+                    HandshakeCrackRegistry.remove(path);
                     int pos = hslist.indexOf(path);
                     if (pos >= 0) notifyItemChanged(pos);
                     toaster("Crack failed: " + e.getMessage());
                 });
             }
-        }, "hs-brute-" + id).start();
+        }, "hs-brute-" + notifId).start();
     }
 
-    private void applyFinished(String path, String finalMac, WiFINetwork net, BruteJob finished) {
+    private void applyFinished(String path, String finalMac, WiFINetwork net) {
         if (net != null && net.getOK()) {
             core.putString(finalMac, net.getPsk());
             toaster(context.getResources().getString(R.string.pass_founded) + net.getPsk());
             if (onChangeListener != null) onChangeListener.run();
         } else {
             toaster(context.getString(R.string.pass_not_found));
-        }
-        // If logs are open, leave them so the user can read the result; else dismiss quietly.
-        if (finished != null && finished.logDialog != null && !finished.logDialog.isShowing()) {
-            try { finished.logDialog.dismiss(); } catch (Exception ignored) {}
         }
         int pos = hslist.indexOf(path);
         if (pos >= 0) notifyItemChanged(pos);

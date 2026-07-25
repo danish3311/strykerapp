@@ -74,6 +74,12 @@ import java.util.concurrent.ExecutionException;
 public class MainActivity extends AppCompatActivity {
 
     public static final String EXTRA_OPEN_UPDATE = "open_update";
+    public static final String EXTRA_OPEN_HANDSHAKES = "open_handshakes";
+    public static final String EXTRA_HS_PATH = "hs_path";
+    public static final String EXTRA_HS_ACTION = "hs_action";
+    public static final String HS_ACTION_OPEN = "open";
+    public static final String HS_ACTION_LOGS = "logs";
+    public static final String HS_ACTION_STOP = "stop";
 
     private static TextView logo;
     private static ImageView menu;
@@ -222,6 +228,32 @@ public class MainActivity extends AppCompatActivity {
         boolean openUpdate = getIntent() != null
                 && getIntent().getBooleanExtra(EXTRA_OPEN_UPDATE, false);
         UpdateManager.checkAndPrompt(this, openUpdate);
+        handleHandshakeIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleHandshakeIntent(intent);
+    }
+
+    /** Deep-link from handshake-crack notification (Open / Logs / Stop). */
+    private void handleHandshakeIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(EXTRA_OPEN_HANDSHAKES, false)) return;
+        String path = intent.getStringExtra(EXTRA_HS_PATH);
+        String action = intent.getStringExtra(EXTRA_HS_ACTION);
+        if (HS_ACTION_STOP.equals(action) && path != null) {
+            com.zalexdev.stryker.handshakes.HandshakeCrackRegistry.stop(path, this);
+        } else if (HS_ACTION_LOGS.equals(action) && path != null) {
+            com.zalexdev.stryker.handshakes.HandshakeCrackRegistry.requestShowLogs(path);
+        }
+        if (receiver != null) {
+            receiver.changeFragment(R.id.hs_item);
+        }
+        // Consume so rotation doesn't re-fire stop
+        intent.removeExtra(EXTRA_OPEN_HANDSHAKES);
+        intent.removeExtra(EXTRA_HS_ACTION);
     }
 
     private void wireDrawerRows(View navView, DrawerLayout drawer) {

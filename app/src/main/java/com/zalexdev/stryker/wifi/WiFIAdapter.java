@@ -298,7 +298,17 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             attackDialog(network,2);
         });
         try_handshake.setOnClickListener(view -> {
-            attackDialog(network,3);
+            new MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.hs_deauth_method_title)
+                    .setItems(new CharSequence[]{
+                            context.getString(R.string.hs_deauth_aireplay),
+                            context.getString(R.string.hs_deauth_mdk4)
+                    }, (d, which) -> {
+                        core.putString("hs_deauth_method", which == 1 ? "mdk4" : "aireplay");
+                        attackDialog(network, 3);
+                    })
+                    .setNegativeButton(R.string.cancel, null)
+                    .show();
         });
         brute_pincode.setOnClickListener(view -> {
             attackDialog(network,4);
@@ -729,22 +739,31 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             setCanceled(true);
                             return;
                         }
-                        sendEvent("Target visible. Wifite-style deauth: burst every "
-                                + WifiDeauthEngine.BURST_INTERVAL_SEC
-                                + "s (broadcast + clients), then wait for HS…");
+                        String deauthMethod = core.getString("hs_deauth_method");
+                        if (deauthMethod == null || deauthMethod.isEmpty()) deauthMethod = "aireplay";
+                        sendEvent("Target visible. Deauth method: " + deauthMethod
+                                + " · burst every " + WifiDeauthEngine.BURST_INTERVAL_SEC
+                                + "s, then wait for HS…");
                         core.lockWifiChannel(deauthIface, channelStr);
 
                         int round = 0;
                         while (!hsStatus[0] && !pmkidStatus[0] && !isCanceled()) {
                             round++;
-                            // Channel is pinned by airodump -c; only re-lock if needed.
-                            // Repeated iw set channel spam "Set Frequency" on many phones.
                             sendEvent("--- deauth round #" + round
                                     + " · clients=" + clients.size()
+                                    + " · method=" + deauthMethod
                                     + " · elapsed=" + second[0] + " ---");
-                            ArrayList<String> snapshot = WifiDeauthEngine.copyClients(clients);
-                            String burstLog = WifiDeauthEngine.fireBurst(
-                                    core, deauthIface, bssid, snapshot, sink);
+                            String burstLog;
+                            if ("mdk4".equalsIgnoreCase(deauthMethod)) {
+                                int ch = 0;
+                                try { ch = Integer.parseInt(channelStr); } catch (Exception ignored) {}
+                                burstLog = WifiDeauthEngine.fireMdk4Burst(
+                                        core, deauthIface, bssid, ch, sink);
+                            } else {
+                                ArrayList<String> snapshot = WifiDeauthEngine.copyClients(clients);
+                                burstLog = WifiDeauthEngine.fireBurst(
+                                        core, deauthIface, bssid, snapshot, sink);
+                            }
                             sendEvent("Burst done: " + burstLog
                                     + " · listening " + WifiDeauthEngine.BURST_INTERVAL_SEC + "s…");
 

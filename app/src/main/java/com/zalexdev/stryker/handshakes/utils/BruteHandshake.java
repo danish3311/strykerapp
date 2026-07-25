@@ -2,7 +2,6 @@ package com.zalexdev.stryker.handshakes.utils;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -21,7 +20,6 @@ import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.custom.WiFINetwork;
 import com.zalexdev.stryker.logger.Logger;
 import com.zalexdev.stryker.utils.Core;
-import com.zalexdev.stryker.utils.Utils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -75,10 +73,14 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
     public Logger logger;
     public String engine = ENGINE_AIRCRACK;
     public Listener listener;
+    /** Absolute capture path — used for notification deep-links / stop. */
+    public String capturePath;
+    public int notifId;
 
     private final AtomicBoolean killed = new AtomicBoolean(false);
     private long lastUiMs;
     private long lastLogAppendMs;
+    private long lastNotifMs;
 
     public BruteHandshake(String p, String w, Core c, Activity a, Context con, TextView pr, TextView t, int i) {
         this(p, w, c, a, con, pr, t, null, null, i, ENGINE_AIRCRACK);
@@ -108,6 +110,17 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
 
     public BruteHandshake setListener(Listener listener) {
         this.listener = listener;
+        return this;
+    }
+
+    public BruteHandshake setCapturePath(String capturePath) {
+        this.capturePath = capturePath;
+        return this;
+    }
+
+    public BruteHandshake setNotifId(int notifId) {
+        this.notifId = notifId;
+        this.id = notifId;
         return this;
     }
 
@@ -395,38 +408,81 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
         if (process != null) {
             process.destroy();
         }
+        // Also kill aircrack/hashcat children left in the chroot
+        try {
+            Runtime.getRuntime().exec(new String[]{"su", "-c",
+                    "pkill -f aircrack-ng; pkill -f hashcat; killall aircrack-ng 2>/dev/null; killall hashcat 2>/dev/null"});
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
     protected void onProgressUpdate(String... values) {
-        // unused — we push UI directly for lower latency on \\r updates
         super.onProgressUpdate(values);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.O)
     public void CreateNotification(String key, String left, int prog, int max) {
-        Intent intent = new Intent(context, MainActivity.class);
-        PendingIntent contentIntent = PendingIntent.getActivity(context, 0, intent, Utils.setPendingIntentFlag());
+        // Throttle progress notification noise
+        long now = SystemClock.uptimeMillis();
+        boolean terminal = prog >= max || (left != null && left.toLowerCase(Locale.US).contains("password"));
+        if (!terminal && (now - lastNotifMs) < 1500) return;
+        lastNotifMs = now;
+
         String CHANNEL_ID = "BruteForce";
-        NotificationChannel notificationChannel = new NotificationChannel(CHANNEL_ID, "BruteForce", NotificationManager.IMPORTANCE_LOW);
-
-        NotificationCompat.Builder b = new NotificationCompat.Builder(context);
-
-        b.setAutoCancel(true)
-                .setDefaults(Notification.DEFAULT_ALL)
-                .setWhen(System.currentTimeMillis())
-                .setSmallIcon(R.drawable.bolt)
-                .setTicker("Brute")
-                .setContentTitle(left)
-                .setContentText(key)
-                .setChannelId(CHANNEL_ID)
-                .setDefaults(Notification.DEFAULT_LIGHTS | Notification.DEFAULT_SOUND)
-                .setContentIntent(contentIntent)
-                .setProgress(max, prog, false)
-                .setContentInfo("Info");
-
-        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager notificationManager =
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (notificationManager == null) return;
+        NotificationChannel notificationChannel = new NotificationChannel(
+                CHANNEL_ID, "Handshake crack", NotificationManager.IMPORTANCE_LOW);
+        notificationChannel.setSound(null, null);
         notificationManager.createNotificationChannel(notificationChannel);
+
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        String pathExtra = capturePath != null ? capturePath : path;
+
+        Intent open = new Intent(context, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        open.putExtra(MainActivity.EXTRA_OPEN_HANDSHAKES, true);
+        open.putExtra(MainActivity.EXTRA_HS_PATH, pathExtra);
+        open.putExtra(MainActivity.EXTRA_HS_ACTION, MainActivity.HS_ACTION_OPEN);
+        PendingIntent contentIntent = PendingIntent.getActivity(
+                context, 2000 + id, open, flags);
+
+        Intent logs = new Intent(context, MainActivity.class);
+        logs.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        logs.putExtra(MainActivity.EXTRA_OPEN_HANDSHAKES, true);
+        logs.putExtra(MainActivity.EXTRA_HS_PATH, pathExtra);
+        logs.putExtra(MainActivity.EXTRA_HS_ACTION, MainActivity.HS_ACTION_LOGS);
+        PendingIntent logsIntent = PendingIntent.getActivity(
+                context, 3000 + id, logs, flags);
+
+        Intent stop = new Intent(context, MainActivity.class);
+        stop.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        stop.putExtra(MainActivity.EXTRA_OPEN_HANDSHAKES, true);
+        stop.putExtra(MainActivity.EXTRA_HS_PATH, pathExtra);
+        stop.putExtra(MainActivity.EXTRA_HS_ACTION, MainActivity.HS_ACTION_STOP);
+        PendingIntent stopIntent = PendingIntent.getActivity(
+                context, 4000 + id, stop, flags);
+
+        String title = key != null ? key : "Cracking handshake";
+        String body = left != null ? left : "";
+
+        NotificationCompat.Builder b = new NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.bolt)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setOngoing(!terminal)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(contentIntent)
+                .setProgress(Math.max(max, 1), Math.min(prog, Math.max(max, 1)), max <= 0)
+                .addAction(R.drawable.summarize, "Logs", logsIntent)
+                .addAction(R.drawable.stop, "Stop", stopIntent)
+                .setAutoCancel(terminal);
+
         notificationManager.notify(id, b.build());
     }
 }

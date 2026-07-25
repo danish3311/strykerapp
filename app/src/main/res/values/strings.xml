@@ -552,8 +552,12 @@
     <string name="hs_progress_starting">Starting…</string>
     <string name="hs_progress_label">Progress</string>
     <string name="hs_view_logs">Logs</string>
+    <string name="hs_details">Details</string>
     <string name="hs_cracking_bg">Cracking in background. Tap Logs for details.</string>
     <string name="hs_crack_stopped">Crack stopped</string>
+    <string name="hs_deauth_method_title">Handshake deauth method</string>
+    <string name="hs_deauth_aireplay">aireplay-ng (classic bursts)</string>
+    <string name="hs_deauth_mdk4">mdk4 deauth (mode d)</string>
     <string name="hs_eta_label">ETA</string>
     <string name="hs_upload_email_title">Email for results</string>
     <string name="hs_upload_email_body">OnlineHashCrack will send the cracked password to this address.</string>
