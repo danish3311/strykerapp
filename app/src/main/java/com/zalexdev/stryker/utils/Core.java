@@ -84,6 +84,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class Core {
@@ -983,20 +985,67 @@ public class Core {
     public String getVendorByMacFromDB(String mac){
         String vendor = "";
         try {
+            if (mac == null || mac.length() < 6) return "";
+            String norm = mac.trim().toUpperCase(Locale.ROOT).replace('-', ':');
+            // OUI = first 3 octets
+            String ouiColon;
+            String ouiPlain;
+            String ouiDash;
+            Matcher m = Pattern.compile("([0-9A-F]{2}):([0-9A-F]{2}):([0-9A-F]{2})").matcher(norm);
+            if (m.find()) {
+                ouiColon = m.group(1) + ":" + m.group(2) + ":" + m.group(3);
+                ouiPlain = m.group(1) + m.group(2) + m.group(3);
+                ouiDash = m.group(1) + "-" + m.group(2) + "-" + m.group(3);
+            } else {
+                String plain = norm.replace(":", "").replace("-", "");
+                if (plain.length() < 6) return "";
+                ouiPlain = plain.substring(0, 6);
+                ouiColon = ouiPlain.substring(0, 2) + ":" + ouiPlain.substring(2, 4) + ":" + ouiPlain.substring(4, 6);
+                ouiDash = ouiPlain.substring(0, 2) + "-" + ouiPlain.substring(2, 4) + "-" + ouiPlain.substring(4, 6);
+            }
             if (db == null || !db.isOpen()){
                 db = SQLiteDatabase.openDatabase("/data/data/com.zalexdev.stryker/files/vendors.db", null, SQLiteDatabase.OPEN_READONLY);
             }
-            Cursor cursor = db.rawQuery("select MacPrefix,VendorName from macvendor where MacPrefix LIKE '%"+mac.substring(0,8).toUpperCase(Locale.ROOT)+"%' COLLATE NOCASE", null);
-            if (cursor.moveToFirst()) {
-                vendor = cursor.getString(1);
+            // Try exact matches first (common DB formats), then LIKE
+            String[] candidates = {ouiColon, ouiPlain, ouiDash,
+                    ouiColon.toLowerCase(Locale.ROOT), ouiPlain.toLowerCase(Locale.ROOT)};
+            for (String prefix : candidates) {
+                Cursor cursor = db.rawQuery(
+                        "select VendorName from macvendor where MacPrefix = ? COLLATE NOCASE LIMIT 1",
+                        new String[]{prefix});
+                if (cursor.moveToFirst()) {
+                    vendor = cursor.getString(0);
+                    cursor.close();
+                    break;
+                }
+                cursor.close();
             }
-            cursor.close();
-
-
+            if (vendor.isEmpty()) {
+                Cursor cursor = db.rawQuery(
+                        "select VendorName from macvendor where MacPrefix LIKE ? COLLATE NOCASE LIMIT 1",
+                        new String[]{"%" + ouiColon + "%"});
+                if (cursor.moveToFirst()) {
+                    vendor = cursor.getString(0);
+                }
+                cursor.close();
+            }
+            if (vendor.isEmpty()) {
+                Cursor cursor = db.rawQuery(
+                        "select VendorName from macvendor where replace(replace(MacPrefix,':',''),'-','') LIKE ? COLLATE NOCASE LIMIT 1",
+                        new String[]{ouiPlain + "%"});
+                if (cursor.moveToFirst()) {
+                    vendor = cursor.getString(0);
+                }
+                cursor.close();
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return toTitleCase(vendor);
+        try {
+            return vendor == null || vendor.isEmpty() ? "" : toTitleCase(vendor);
+        } catch (Exception e) {
+            return vendor == null ? "" : vendor;
+        }
     }
     public String getDeviceByCodeNameFromDB(String codename){
         String model = "";

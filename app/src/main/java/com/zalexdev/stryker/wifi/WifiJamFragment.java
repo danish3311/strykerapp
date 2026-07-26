@@ -225,7 +225,7 @@ public class WifiJamFragment extends Fragment {
             String ssid = n.getSsid() == null || n.getSsid().isEmpty() ? "<hidden>" : n.getSsid();
             int cc = n.getClientCount();
             labels[i] = ssid + "\n" + n.getMac() + "  ·  ch " + n.getChannel()
-                    + "  ·  " + n.getPower() + " dBm"
+                    + "  ·  " + n.getSignalPercent() + "%"
                     + (cc > 0 ? "  ·  " + cc + " clients" : "");
         }
 

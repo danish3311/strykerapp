@@ -22,6 +22,9 @@ public class WiFINetwork {
     public String name = "";
     public boolean canceled = false;
     public boolean three = false;
+    public String encryption = "";
+    /** Approximate seconds the AP has been observed during this monitor scan. */
+    public int uptimeSec = 0;
     /** Clients seen associated to this AP (monitor scan / airodump). */
     public int clientCount = 0;
     public ArrayList<String> clients = new ArrayList<>();
@@ -104,6 +107,49 @@ public class WiFINetwork {
 
     public void setPower(int power) {
         this.power = power;
+    }
+
+    /**
+     * UI signal strength 0–100.
+     * Station scan stores positive attenuation (≈ |dBm|).
+     * Raw negative dBm is also accepted (monitor / legacy).
+     */
+    public int getSignalPercent() {
+        int p = power;
+        if (p < 0) {
+            // dBm: -30 strong → 70, -90 weak → 10
+            if (p <= -100) return 0;
+            if (p >= -20) return 100;
+            return Math.max(0, Math.min(100, 100 + p));
+        }
+        return Math.max(0, Math.min(100, 100 - p));
+    }
+
+    public String getEncryption() {
+        return encryption == null ? "" : encryption;
+    }
+
+    public void setEncryption(String encryption) {
+        this.encryption = encryption == null ? "" : encryption.trim();
+    }
+
+    public int getUptimeSec() {
+        return uptimeSec;
+    }
+
+    public void setUptimeSec(int uptimeSec) {
+        this.uptimeSec = Math.max(0, uptimeSec);
+    }
+
+    public String getUptimeLabel() {
+        if (uptimeSec <= 0) return "";
+        if (uptimeSec < 60) return uptimeSec + "s";
+        int m = uptimeSec / 60;
+        int s = uptimeSec % 60;
+        if (m < 60) return s > 0 ? (m + "m " + s + "s") : (m + "m");
+        int h = m / 60;
+        m = m % 60;
+        return m > 0 ? (h + "h " + m + "m") : (h + "h");
     }
 
     public String getLun() {

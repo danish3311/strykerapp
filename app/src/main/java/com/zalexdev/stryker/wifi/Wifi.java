@@ -195,9 +195,9 @@ public class Wifi extends Fragment {
         monToggleBtn = view.findViewById(R.id.wifi_mon_toggle_btn);
         if (monDurationBtn != null) {
             int sec = core.getInt("wifi_mon_seconds");
-            if (sec == 0 && !core.getBoolean("wifi_mon_until_stop")) {
-                sec = 15;
-                core.putInt("wifi_mon_seconds", 15);
+                    if (sec == 0 && !core.getBoolean("wifi_mon_until_stop")) {
+                sec = 30;
+                core.putInt("wifi_mon_seconds", 30);
             }
             updateMonDurationLabel();
             monDurationBtn.setOnClickListener(v -> pickMonDuration());
@@ -229,7 +229,8 @@ public class Wifi extends Fragment {
                 if (monOptions != null) {
                     monOptions.setVisibility(isMon ? View.VISIBLE : View.GONE);
                 }
-                // Clear cached station/monitor list so the other mode never shows stale results
+                // Drop in-memory list when switching modes (avoid stale station/monitor mix).
+                // Do not wipe persisted last_wifi_scan until a successful new scan.
                 clearScanResultsUi(isMon
                         ? "Monitor mode — pull to scan for APs + clients"
                         : "Station mode — pull to scan");
@@ -242,11 +243,10 @@ public class Wifi extends Fragment {
         return view;
     }
 
-    /** Drop in-memory/persisted list display when switching scan modes. */
+    /** Drop in-memory list display when switching scan modes. */
     private void clearScanResultsUi(String subtitleMsg) {
         list = new ArrayList<>();
         if (mainActivity != null) mainActivity.setNetworks(list);
-        try { core.saveLastWifiScan(list); } catch (Exception ignored) {}
         if (mRecyclerView != null) mRecyclerView.setAdapter(null);
         mAdapter = null;
         renderListState(false);
@@ -265,7 +265,7 @@ public class Wifi extends Fragment {
             monDurationBtn.setText("Duration: until stop");
         } else {
             int sec = core.getInt("wifi_mon_seconds");
-            if (sec <= 0) sec = 15;
+            if (sec <= 0) sec = 30;
             monDurationBtn.setText("Duration: " + sec + "s");
         }
     }
@@ -424,22 +424,20 @@ public class Wifi extends Fragment {
         scanThread = new Thread(() -> {
             try {
                 boolean monitorScan = core.getBoolean("wifi_scan_monitor");
-                ArrayList<String> wlans = core.getInterfacesList();
-                if (wlans.contains(wlan + "mon")) {
-                    wlan = wlan + "mon";
-                }
+                // Always start from the configured station iface name
+                wlan = core.getString("wlan_wifi");
+                if (wlan == null || wlan.isEmpty()) wlan = "wlan0";
 
                 if (monitorScan) {
                     // Monitor + clients: airodump only (skip station iw scan)
                     boolean untilStop = core.getBoolean("wifi_mon_until_stop");
                     int sec = core.getInt("wifi_mon_seconds");
-                    if (sec <= 0) sec = 15;
+                    if (sec <= 0) sec = 30;
                     if (untilStop) sec = 0;
                     final int duration = sec;
                     String band = core.getString("wifi_mon_band");
                     if (band == null || band.isEmpty()) band = "abg";
                     final String bandFinal = band;
-                    // Clear station cache immediately so UI never shows old APs as "monitor"
                     safeUi(() -> {
                         list = new ArrayList<>();
                         if (mainActivity != null) mainActivity.setNetworks(list);
@@ -487,9 +485,6 @@ public class Wifi extends Fragment {
                                 } else {
                                     renderListState(false);
                                     text1.setText("Monitor scan…");
-                                    if (textSub != null && !textSub.getText().toString().contains("APs")) {
-                                        // keep progress line above
-                                    }
                                 }
                             }));
                     ArrayList<WiFINetwork> monList = activeMonScan.run();
@@ -499,18 +494,32 @@ public class Wifi extends Fragment {
                         refreshMonitorToggleLabel();
                     });
                     list = monList != null ? monList : new ArrayList<>();
-                } else {
-                    // Station: disable monitor first, then normal iw scan
-                    disableMonitorForStation();
-                    if (wlans.contains(wlan)) {
-                        if (!"wlan0".equals(wlan) && wlan.contains("mon")) {
-                            core.disableMonitorMode(wlan);
-                            wlan = wlan.replace("mon", "");
-                            core.customCommand("ip link set " + wlan + " up");
-                        } else if (!"wlan0".equals(wlan)) {
-                            core.customCommand("ip link set " + wlan + " up");
+                    if (list.isEmpty()) {
+                        ArrayList<String> log = core.customCommand(
+                                "tail -n 20 /sdcard/Stryker/hs/monscan_airo.log 2>/dev/null", true);
+                        String hint = "No APs captured — check deauth iface is in monitor mode";
+                        if (log != null) {
+                            for (String l : log) {
+                                if (l == null) continue;
+                                String t = l.toLowerCase();
+                                if (t.contains("no such device") || t.contains("failed")
+                                        || t.contains("not found") || t.contains("error")) {
+                                    hint = l.trim();
+                                    break;
+                                }
+                            }
                         }
+                        final String errHint = hint;
+                        safeUi(() -> {
+                            text1.setText("Monitor scan empty");
+                            textSub.setText(errHint);
+                        });
                     }
+                } else {
+                    // Station scan — same as classic pre-monitor path:
+                    // managed iface + `iw scan`, with retries. Only tear down
+                    // monitor if it is actually still enabled.
+                    ensureStationIfaceReady();
                     list = new ScanWifi(wlan, core).execute().get();
                     if (list == null) list = new ArrayList<>();
                     while (list.isEmpty() && failedscancount < 5) {
@@ -570,8 +579,8 @@ public class Wifi extends Fragment {
                         refresh.setRefreshing(false);
                     });
                 } else {
-                    boolean sortClients = monitorScan;
-                    mAdapter = new WiFIAdapter(context, activity, list, sortClients);
+                    // Station: classic power sort. Monitor: clients-first.
+                    mAdapter = new WiFIAdapter(context, activity, list, monitorScan);
                     mAdapter.setHasStableIds(true);
                     safeUi(() -> {
                         mRecyclerView.setItemViewCacheSize(64);
@@ -598,6 +607,55 @@ public class Wifi extends Fragment {
             }
         });
         scanThread.start();
+    }
+
+    /**
+     * Classic station prep: use managed {@code wlan_wifi}, leave monitor only
+     * if it is currently on, then bring the iface up for {@code iw scan}.
+     */
+    private void ensureStationIfaceReady() {
+        wlan = core.getString("wlan_wifi");
+        if (wlan == null || wlan.isEmpty()) wlan = "wlan0";
+        wlan = wlan.replace("mon", "");
+
+        String deauth = core.getString("wlan_deauth");
+        if (deauth == null) deauth = "";
+        boolean monUp = false;
+        try {
+            monUp = core.monitorManager.isMonitorModeEnabled(wlan)
+                    || core.monitorManager.isMonitorModeEnabled(wlan + "mon");
+            if (!monUp && !deauth.isEmpty()) {
+                monUp = core.monitorManager.isMonitorModeEnabled(deauth)
+                        || core.monitorManager.isMonitorModeEnabled(deauth + "mon");
+            }
+        } catch (Exception ignored) {
+        }
+
+        if (monUp) {
+            try {
+                if (!deauth.isEmpty()) core.disableMonitorMode(deauth);
+                if (!deauth.equals(wlan)) core.disableMonitorMode(wlan);
+                // Internal cards often need wifi service back after con_mode flip
+                if (wlan.matches("s?wlan0") || deauth.matches("s?wlan0")) {
+                    core.customCommand("svc wifi enable", true);
+                    try { Thread.sleep(1200); } catch (InterruptedException ignored) {}
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        try {
+            ArrayList<String> wlans = core.getInterfacesList();
+            if (wlans != null && wlans.contains(wlan)) {
+                core.customCommand("ip link set " + wlan + " up", true);
+            }
+        } catch (Exception ignored) {
+            try {
+                core.customCommand("ip link set " + wlan + " up", true);
+            } catch (Exception ignored2) {
+            }
+        }
+        refreshMonitorToggleLabel();
     }
 
     private void renderListState(boolean hasNetworks) {

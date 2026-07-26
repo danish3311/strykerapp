@@ -128,7 +128,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         adapter.pixie_mark.setVisibility(View.GONE);
         adapter.key_mark.setVisibility(View.GONE);
 
-        int signalPercent = Math.max(0, Math.min(100, 100 - wifi.getPower()));
+        int signalPercent = wifi.getSignalPercent();
         adapter.wifi_power.setText(signalPercent + "%");
         adapter.wifi_power.setTextColor(signalColor(signalPercent));
         if (adapter.icon != null) {
@@ -146,24 +146,54 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         if (wifi.getOK()) {
             adapter.key_mark.setVisibility(View.VISIBLE);
         }
+
+        boolean monitorList = core.getBoolean("wifi_scan_monitor");
+
+        // Manufacturer — resolve from OUI DB if still Unknown (monitor scans)
         String vendor = wifi.getVendor();
-        adapter.wifi_model.setText(vendor == null || vendor.isEmpty()
-                ? context.getString(R.string.wifi_card_unknown_vendor)
-                : vendor);
-        if (wifi.getModel() != null && wifi.getModel().length() > 0) {
-            adapter.wifi_model.setText(context.getString(R.string.wifi_card_model, wifi.getModel()));
-            if (wifi.isVulnerable()) {
-                adapter.pixie_mark.setVisibility(View.VISIBLE);
+        if (vendor == null || vendor.isEmpty() || "Unknown".equalsIgnoreCase(vendor)) {
+            try {
+                String v = core.getVendorByMacFromDB(wifi.getMac());
+                if (v != null && !v.isEmpty()) {
+                    wifi.setVendor(v);
+                    vendor = v;
+                }
+            } catch (Exception ignored) {}
+        }
+        if (monitorList) {
+            StringBuilder meta = new StringBuilder();
+            if (vendor != null && !vendor.isEmpty() && !"Unknown".equalsIgnoreCase(vendor)) {
+                meta.append(vendor);
+            } else {
+                meta.append(context.getString(R.string.wifi_card_unknown_vendor));
+            }
+            String enc = wifi.getEncryption();
+            if (enc != null && !enc.isEmpty()) {
+                meta.append(" · ").append(shortEnc(enc));
+            }
+            adapter.wifi_model.setText(meta.toString());
+        } else {
+            adapter.wifi_model.setText(vendor == null || vendor.isEmpty()
+                    ? context.getString(R.string.wifi_card_unknown_vendor)
+                    : vendor);
+            if (wifi.getModel() != null && wifi.getModel().length() > 0) {
+                adapter.wifi_model.setText(context.getString(R.string.wifi_card_model, wifi.getModel()));
+                if (wifi.isVulnerable()) {
+                    adapter.pixie_mark.setVisibility(View.VISIBLE);
+                }
             }
         }
 
         if (adapter.wifi_clients != null) {
             int cc = wifi.getClientCount();
-            if (core.getBoolean("wifi_scan_monitor")) {
+            if (monitorList) {
                 adapter.wifi_clients.setVisibility(View.VISIBLE);
-                String line = cc + (cc == 1 ? " client" : " clients");
-                if (wifi.getChannel() > 0) line += " · ch " + wifi.getChannel();
-                adapter.wifi_clients.setText(line);
+                StringBuilder line = new StringBuilder();
+                line.append(cc).append(cc == 1 ? " client" : " clients");
+                String up = wifi.getUptimeLabel();
+                if (!up.isEmpty()) line.append(" · up ").append(up);
+                if (wifi.getChannel() > 0) line.append(" · ch ").append(wifi.getChannel());
+                adapter.wifi_clients.setText(line.toString());
             } else if (cc > 0) {
                 adapter.wifi_clients.setVisibility(View.VISIBLE);
                 adapter.wifi_clients.setText(cc + (cc == 1 ? " client" : " clients"));
@@ -177,6 +207,13 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         }
 
         adapter.card.setOnClickListener(view -> newWifiDialog(wifilist.get(position)));
+    }
+
+    private static String shortEnc(String enc) {
+        if (enc == null) return "";
+        String e = enc.trim();
+        if (e.length() <= 28) return e;
+        return e.substring(0, 28) + "…";
     }
 
     private int signalColor(int percent) {
@@ -280,10 +317,30 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         TextView dialogClients = dialog.findViewById(R.id.dialog_clients);
         if (dialogClients != null) {
             int cc = network.getClientCount();
-            if (cc > 0 || core.getBoolean("wifi_scan_monitor")) {
+            boolean mon = core.getBoolean("wifi_scan_monitor");
+            if (cc > 0 || mon) {
                 dialogClients.setVisibility(View.VISIBLE);
-                dialogClients.setText(cc + (cc == 1 ? " client connected" : " clients connected")
-                        + (network.getChannel() > 0 ? (" · ch " + network.getChannel()) : ""));
+                StringBuilder sb = new StringBuilder();
+                sb.append(cc).append(cc == 1 ? " client connected" : " clients connected");
+                if (network.getChannel() > 0) sb.append(" · ch ").append(network.getChannel());
+                String up = network.getUptimeLabel();
+                if (!up.isEmpty()) sb.append(" · up ").append(up);
+                String enc = network.getEncryption();
+                if (enc != null && !enc.isEmpty()) sb.append("\n").append(shortEnc(enc));
+                String vendor = network.getVendor();
+                if (vendor == null || vendor.isEmpty() || "Unknown".equalsIgnoreCase(vendor)) {
+                    try {
+                        String v = core.getVendorByMacFromDB(network.getMac());
+                        if (v != null && !v.isEmpty()) {
+                            network.setVendor(v);
+                            vendor = v;
+                        }
+                    } catch (Exception ignored) {}
+                }
+                if (vendor != null && !vendor.isEmpty() && !"Unknown".equalsIgnoreCase(vendor)) {
+                    sb.append("\n").append(vendor);
+                }
+                dialogClients.setText(sb.toString());
             } else {
                 dialogClients.setVisibility(View.GONE);
             }
@@ -698,8 +755,10 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     ArrayList<String> clients = new ArrayList<>();
                     if (network.getClients() != null) {
                         for (String c : network.getClients()) {
-                            if (c != null && c.contains(":") && !clients.contains(c)) {
-                                clients.add(c);
+                            if (c == null) continue;
+                            String mac = c.trim().toLowerCase(Locale.US);
+                            if (mac.contains(":") && !clients.contains(mac)) {
+                                clients.add(mac);
                             }
                         }
                     }
@@ -722,6 +781,22 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     sendEvent("Target: " + network.getSsid() + " (" + bssid + ")");
                     sendEvent("Channel: " + channelStr
                             + (Boolean.TRUE.equals(network.getIs5hhz()) ? " · 5 GHz" : " · 2.4 GHz"));
+                    if (network.getEncryption() != null && !network.getEncryption().isEmpty()) {
+                        sendEvent("Encryption: " + network.getEncryption());
+                    }
+                    if (network.getVendor() != null && !network.getVendor().isEmpty()
+                            && !"Unknown".equalsIgnoreCase(network.getVendor())) {
+                        sendEvent("Vendor: " + network.getVendor());
+                    }
+                    if (!clients.isEmpty()) {
+                        sendEvent("Starting with " + clients.size()
+                                + " client(s) from monitor scan — will also catch new ones:");
+                        for (String c : clients) {
+                            sendEvent("  · " + c);
+                        }
+                    } else {
+                        sendEvent("No pre-scanned clients — will discover during capture");
+                    }
                     sendEvent("Scan iface pref: " + scanRaw + " · Deauth iface pref: " + deauthRaw);
                     sendEvent("Enabling monitor mode…");
                     if (likelyInternal) {
@@ -1285,15 +1360,28 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     ArrayList<String> liveClients = new ArrayList<>();
                     if (network.getClients() != null) {
                         for (String c : network.getClients()) {
-                            if (c != null && c.contains(":") && !liveClients.contains(c)) {
-                                liveClients.add(c);
+                            if (c == null) continue;
+                            String mac = c.trim().toLowerCase(Locale.US);
+                            if (mac.contains(":") && !liveClients.contains(mac)) {
+                                liveClients.add(mac);
                             }
                         }
                     }
                     if (!liveClients.isEmpty()) {
                         refreshClientsLabel(clientsLabel, liveClients);
+                        outputtext.append("Using " + liveClients.size()
+                                + " client(s) from monitor scan; watching for new ones…\n");
+                        for (String c : liveClients) {
+                            outputtext.append("  · " + c + "\n");
+                        }
+                    } else {
+                        outputtext.append("No pre-scanned clients — discovering…\n");
                     }
                     Set<String> directedStarted = new HashSet<>();
+                    // Pre-mark known clients so first directed round hits them immediately
+                    for (String c : liveClients) {
+                        directedStarted.add(c.toLowerCase(Locale.US));
+                    }
 
                     WifiDeauthEngine.LineSink uiSink = line -> activity.runOnUiThread(() -> {
                         String out = line;
