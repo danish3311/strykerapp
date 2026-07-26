@@ -46,6 +46,19 @@
             android:textStyle="bold" />
 
         <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/dialog_clients"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text=""
+            android:textColor="#1565C0"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <com.google.android.material.textview.MaterialTextView
             android:id="@+id/mac"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

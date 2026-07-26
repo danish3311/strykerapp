@@ -83,13 +83,22 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
 
     public WiFIAdapter(Context context2, Activity mActivity, ArrayList<WiFINetwork> wifi) {
+        this(context2, mActivity, wifi, false);
+    }
+
+    public WiFIAdapter(Context context2, Activity mActivity, ArrayList<WiFINetwork> wifi,
+                       boolean sortByClients) {
         context = context2;
         wifilist = wifi;
         activity = mActivity;
-        try {wifi.sort(new WiFINetwork.WiFIComporator());}
-        catch (Exception ignored){}
+        try {
+            if (sortByClients) {
+                ScanWifiMonitor.sortByClients(wifi);
+            } else {
+                wifi.sort(new WiFINetwork.WiFIComporator());
+            }
+        } catch (Exception ignored) {}
         core = new Core(context2);
-
     }
 
     @NonNull
@@ -150,14 +159,14 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
         if (adapter.wifi_clients != null) {
             int cc = wifi.getClientCount();
-            if (cc > 0) {
+            if (core.getBoolean("wifi_scan_monitor")) {
                 adapter.wifi_clients.setVisibility(View.VISIBLE);
-                adapter.wifi_clients.setText(cc + (cc == 1 ? " client" : " clients")
-                        + (wifi.getClients().isEmpty() ? "" : " · " + String.join(", ",
-                        wifi.getClients().size() > 3
-                                ? wifi.getClients().subList(0, 3)
-                                : wifi.getClients())
-                        + (wifi.getClients().size() > 3 ? "…" : "")));
+                String line = cc + (cc == 1 ? " client" : " clients");
+                if (wifi.getChannel() > 0) line += " · ch " + wifi.getChannel();
+                adapter.wifi_clients.setText(line);
+            } else if (cc > 0) {
+                adapter.wifi_clients.setVisibility(View.VISIBLE);
+                adapter.wifi_clients.setText(cc + (cc == 1 ? " client" : " clients"));
             } else {
                 adapter.wifi_clients.setVisibility(View.GONE);
             }
@@ -266,6 +275,18 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
             mac.setText(Core.HIDDEN_MAC);
         }else{
             mac.setText(network.getMac().toUpperCase(Locale.ROOT));
+        }
+
+        TextView dialogClients = dialog.findViewById(R.id.dialog_clients);
+        if (dialogClients != null) {
+            int cc = network.getClientCount();
+            if (cc > 0 || core.getBoolean("wifi_scan_monitor")) {
+                dialogClients.setVisibility(View.VISIBLE);
+                dialogClients.setText(cc + (cc == 1 ? " client connected" : " clients connected")
+                        + (network.getChannel() > 0 ? (" · ch " + network.getChannel()) : ""));
+            } else {
+                dialogClients.setVisibility(View.GONE);
+            }
         }
 
         info.setOnClickListener(v -> {
@@ -821,13 +842,29 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                     + " · method=" + deauthMethod
                                     + " · elapsed=" + second[0] + " ---");
                             String burstLog;
+                            ArrayList<String> snapshot = WifiDeauthEngine.copyClients(clients);
                             if ("mdk4".equalsIgnoreCase(deauthMethod)) {
                                 int ch = 0;
                                 try { ch = Integer.parseInt(channelStr); } catch (Exception ignored) {}
                                 burstLog = WifiDeauthEngine.fireMdk4Burst(
                                         core, deauthIface, bssid, ch, sink);
+                                // Also directed aireplay at each discovered client
+                                if (!snapshot.isEmpty()) {
+                                    sendEvent("Directed deauth → " + snapshot.size() + " client(s)…");
+                                    for (String client : snapshot) {
+                                        if (isCanceled()) break;
+                                        WifiDeauthEngine.fireDirectedBurst(
+                                                core, deauthIface, bssid, client, sink);
+                                    }
+                                    burstLog += " + directed x" + snapshot.size();
+                                }
                             } else {
-                                ArrayList<String> snapshot = WifiDeauthEngine.copyClients(clients);
+                                if (snapshot.isEmpty()) {
+                                    sendEvent("No clients yet — broadcast deauth only this round");
+                                } else {
+                                    sendEvent("Deauth broadcast + " + snapshot.size()
+                                            + " directed client(s)");
+                                }
                                 burstLog = WifiDeauthEngine.fireBurst(
                                         core, deauthIface, bssid, snapshot, sink);
                             }
@@ -1392,49 +1429,35 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         }).start();
     }
 
-    /** Seed clients line under SSID from last monitor scan. */
+    /** Seed clients line under SSID from last monitor scan — count only. */
     private void seedClientsLabel(TextView clientsLabel, WiFINetwork network) {
         if (clientsLabel == null || network == null) return;
-        ArrayList<String> known = network.getClients();
         int cc = network.getClientCount();
-        if (known != null && !known.isEmpty()) {
-            refreshClientsLabel(clientsLabel, known);
-        } else if (cc > 0) {
-            clientsLabel.setVisibility(View.VISIBLE);
-            clientsLabel.setText(cc + (cc == 1 ? " client" : " clients") + " (from scan)");
+        clientsLabel.setVisibility(View.VISIBLE);
+        if (cc > 0) {
+            clientsLabel.setText(cc + (cc == 1 ? " client" : " clients"));
         } else {
-            clientsLabel.setVisibility(View.VISIBLE);
             clientsLabel.setText("Clients: listening…");
         }
     }
 
-    /** Live update of clients listed under the WiFi name (deauth / handshake). */
+    /** Live update — count only under the WiFi name (MACs stay in the log). */
     private void refreshClientsLabel(TextView clientsLabel, Iterable<String> clients) {
         if (clientsLabel == null || activity == null) return;
-        ArrayList<String> list = new ArrayList<>();
+        int count = 0;
         if (clients != null) {
             for (String c : clients) {
-                if (c == null) continue;
-                String t = c.trim();
-                if (!t.isEmpty() && !list.contains(t)) list.add(t);
+                if (c != null && c.contains(":")) count++;
             }
         }
-        final boolean hide = core != null && core.getBoolean("hide");
+        final int cc = count;
         activity.runOnUiThread(() -> {
             clientsLabel.setVisibility(View.VISIBLE);
-            if (list.isEmpty()) {
+            if (cc <= 0) {
                 clientsLabel.setText("Clients: listening…");
-                return;
+            } else {
+                clientsLabel.setText(cc + (cc == 1 ? " client" : " clients"));
             }
-            StringBuilder sb = new StringBuilder();
-            sb.append(list.size()).append(list.size() == 1 ? " client" : " clients").append(":\n");
-            int max = Math.min(list.size(), 8);
-            for (int i = 0; i < max; i++) {
-                if (i > 0) sb.append('\n');
-                sb.append(hide ? Core.HIDDEN_MAC : list.get(i));
-            }
-            if (list.size() > max) sb.append("\n… +").append(list.size() - max).append(" more");
-            clientsLabel.setText(sb.toString());
         });
     }
 

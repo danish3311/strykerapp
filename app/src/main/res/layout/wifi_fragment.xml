@@ -80,7 +80,7 @@
                     android:id="@+id/wifi_mon_options"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
+                    android:layout_marginBottom="8dp"
                     android:gravity="center_vertical"
                     android:orientation="horizontal"
                     android:visibility="gone">
@@ -95,6 +95,15 @@
                         android:textAllCaps="false" />
 
                     <com.google.android.material.button.MaterialButton
+                        android:id="@+id/wifi_mon_band_btn"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Band: 2.4+5"
+                        android:textAllCaps="false" />
+
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/wifi_mon_stop_btn"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
@@ -103,6 +112,15 @@
                         android:textAllCaps="false"
                         android:visibility="gone" />
                 </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/wifi_mon_toggle_btn"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:text="Monitor iface: check…"
+                    android:textAllCaps="false" />
 
                 <com.google.android.material.textview.MaterialTextView
                     android:layout_width="wrap_content"

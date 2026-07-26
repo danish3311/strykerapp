@@ -13,7 +13,7 @@ public class WiFINetwork {
     public Boolean isVulnerable = false;
     public String model = "";
     public int power = 40;
-    public int channel = 1;
+    public int channel = 0;
     public String lon = "";
     public String lun = "";
     public String date = "";

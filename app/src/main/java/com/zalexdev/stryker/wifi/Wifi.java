@@ -97,7 +97,9 @@ public class Wifi extends Fragment {
     private AdvancedProcess pixieProcess;
     private ScanWifiMonitor activeMonScan;
     private MaterialButton monDurationBtn;
+    private MaterialButton monBandBtn;
     private MaterialButton monStopBtn;
+    private MaterialButton monToggleBtn;
     private View monOptions;
 
     private void safeUi(Runnable r) {
@@ -188,7 +190,9 @@ public class Wifi extends Fragment {
                 view.findViewById(R.id.wifi_scan_mode);
         monOptions = view.findViewById(R.id.wifi_mon_options);
         monDurationBtn = view.findViewById(R.id.wifi_mon_duration_btn);
+        monBandBtn = view.findViewById(R.id.wifi_mon_band_btn);
         monStopBtn = view.findViewById(R.id.wifi_mon_stop_btn);
+        monToggleBtn = view.findViewById(R.id.wifi_mon_toggle_btn);
         if (monDurationBtn != null) {
             int sec = core.getInt("wifi_mon_seconds");
             if (sec == 0 && !core.getBoolean("wifi_mon_until_stop")) {
@@ -198,11 +202,19 @@ public class Wifi extends Fragment {
             updateMonDurationLabel();
             monDurationBtn.setOnClickListener(v -> pickMonDuration());
         }
+        if (monBandBtn != null) {
+            updateMonBandLabel();
+            monBandBtn.setOnClickListener(v -> pickMonBand());
+        }
         if (monStopBtn != null) {
             monStopBtn.setOnClickListener(v -> {
                 if (activeMonScan != null) activeMonScan.stop();
                 monStopBtn.setVisibility(View.GONE);
             });
+        }
+        if (monToggleBtn != null) {
+            monToggleBtn.setOnClickListener(v -> toggleMonitorIface());
+            refreshMonitorToggleLabel();
         }
         if (modeGroup != null) {
             boolean mon = core.getBoolean("wifi_scan_monitor");
@@ -217,6 +229,11 @@ public class Wifi extends Fragment {
                 if (monOptions != null) {
                     monOptions.setVisibility(isMon ? View.VISIBLE : View.GONE);
                 }
+                if (!isMon) {
+                    // Leaving monitor scan mode — put iface back to station
+                    new Thread(this::disableMonitorForStation).start();
+                }
+                refreshMonitorToggleLabel();
             });
         }
         return view;
@@ -231,6 +248,90 @@ public class Wifi extends Fragment {
             if (sec <= 0) sec = 15;
             monDurationBtn.setText("Duration: " + sec + "s");
         }
+    }
+
+    private void updateMonBandLabel() {
+        if (monBandBtn == null) return;
+        String b = core.getString("wifi_mon_band");
+        if (b == null || b.isEmpty()) b = "abg";
+        if ("a".equals(b)) monBandBtn.setText("Band: 5 GHz");
+        else if ("bg".equals(b)) monBandBtn.setText("Band: 2.4 GHz");
+        else monBandBtn.setText("Band: 2.4+5");
+    }
+
+    private void pickMonBand() {
+        CharSequence[] items = new CharSequence[]{
+                "2.4 GHz only", "5 GHz only", "2.4 + 5 GHz"
+        };
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Monitor scan band")
+                .setItems(items, (d, which) -> {
+                    String b = which == 0 ? "bg" : (which == 1 ? "a" : "abg");
+                    core.putString("wifi_mon_band", b);
+                    updateMonBandLabel();
+                    if (bandValue != null) {
+                        bandValue.setText(which == 0 ? "2.4" : (which == 1 ? "5" : "2.4 / 5"));
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void refreshMonitorToggleLabel() {
+        if (monToggleBtn == null || core == null) return;
+        new Thread(() -> {
+            String raw = core.getString("wlan_deauth");
+            if (raw == null || raw.isEmpty()) raw = "wlan0";
+            final String iface = raw;
+            boolean on = false;
+            try {
+                on = core.monitorManager.isMonitorModeEnabled(iface)
+                        || core.monitorManager.isMonitorModeEnabled(iface + "mon");
+            } catch (Exception ignored) {}
+            final boolean enabled = on;
+            safeUi(() -> monToggleBtn.setText(enabled
+                    ? ("Monitor ON · " + iface + " (tap to disable)")
+                    : ("Monitor OFF · " + iface + " (tap to enable)")));
+        }).start();
+    }
+
+    private void toggleMonitorIface() {
+        if (core == null || context == null) return;
+        monToggleBtn.setEnabled(false);
+        monToggleBtn.setText("Working…");
+        new Thread(() -> {
+            String raw = core.getString("wlan_deauth");
+            if (raw == null || raw.isEmpty()) raw = "wlan0";
+            boolean on = core.monitorManager.isMonitorModeEnabled(raw)
+                    || core.monitorManager.isMonitorModeEnabled(raw + "mon");
+            if (on) {
+                core.disableMonitorMode(raw);
+                if (!raw.equals(core.getString("wlan_wifi"))) {
+                    try { core.disableMonitorMode(core.getString("wlan_wifi")); } catch (Exception ignored) {}
+                }
+                safeUi(() -> core.toaster("Monitor disabled"));
+            } else {
+                boolean ok = core.enableMonitorMode(raw);
+                safeUi(() -> core.toaster(ok ? "Monitor enabled" : "Failed to enable monitor"));
+            }
+            safeUi(() -> {
+                monToggleBtn.setEnabled(true);
+                refreshMonitorToggleLabel();
+            });
+        }).start();
+    }
+
+    private void disableMonitorForStation() {
+        try {
+            String deauth = core.getString("wlan_deauth");
+            String wifi = core.getString("wlan_wifi");
+            if (deauth != null && !deauth.isEmpty()) core.disableMonitorMode(deauth);
+            if (wifi != null && !wifi.isEmpty() && !wifi.equals(deauth)) {
+                core.disableMonitorMode(wifi);
+            }
+        } catch (Exception ignored) {
+        }
+        refreshMonitorToggleLabel();
     }
 
     private void pickMonDuration() {
@@ -302,47 +403,56 @@ public class Wifi extends Fragment {
 
         scanThread = new Thread(() -> {
             try {
+                boolean monitorScan = core.getBoolean("wifi_scan_monitor");
                 ArrayList<String> wlans = core.getInterfacesList();
                 if (wlans.contains(wlan + "mon")) {
                     wlan = wlan + "mon";
                 }
-                if (wlans.contains(wlan)) {
-                    if (!"wlan0".equals(wlan) && wlan.contains("mon")) {
-                        core.disableMonitorMode(wlan);
-                        wlan = wlan.replace("mon", "");
-                        core.customCommand("ip link set " + wlan + " up");
-                    } else if (!"wlan0".equals(wlan)) {
-                        core.customCommand("ip link set " + wlan + " up");
-                    }
-                }
 
-                list = new ScanWifi(wlan, core).execute().get();
-                if (core.getBoolean("wifi_scan_monitor")) {
+                if (monitorScan) {
+                    // Monitor + clients: airodump only (skip station iw scan)
                     boolean untilStop = core.getBoolean("wifi_mon_until_stop");
                     int sec = core.getInt("wifi_mon_seconds");
                     if (sec <= 0) sec = 15;
                     if (untilStop) sec = 0;
                     final int duration = sec;
+                    String band = core.getString("wifi_mon_band");
+                    if (band == null || band.isEmpty()) band = "abg";
+                    final String bandFinal = band;
                     safeUi(() -> {
                         text1.setText("Monitor scan…");
                         textSub.setText(untilStop
-                                ? "Counting clients — tap Stop scan when done"
-                                : ("Counting clients (~" + duration + "s)"));
+                                ? "Hopping channels — tap Stop when done"
+                                : ("Hopping channels (~" + duration + "s)"));
                         statusValue.setText("Monitor");
                         if (monStopBtn != null) monStopBtn.setVisibility(View.VISIBLE);
+                        updateMonBandLabel();
                     });
                     String deauthRaw = core.getString("wlan_deauth");
-                    if (deauthRaw == null || deauthRaw.isEmpty()) deauthRaw = wlan;
-                    activeMonScan = new ScanWifiMonitor(deauthRaw, core, duration)
-                            .setProgressListener((snap, elapsed) -> safeUi(() -> {
+                    if (deauthRaw == null || deauthRaw.isEmpty()) deauthRaw = wlan.replace("mon", "");
+                    activeMonScan = new ScanWifiMonitor(deauthRaw, core, duration, bandFinal)
+                            .setProgressListener((snap, elapsed, hopCh) -> safeUi(() -> {
                                 if (snap == null) return;
-                                textSub.setText((untilStop ? "Scanning… " : "")
-                                        + elapsed + "s · " + snap.size() + " APs"
-                                        + (untilStop ? " · tap Stop" : ""));
+                                int withClients = 0;
+                                for (WiFINetwork n : snap) {
+                                    if (n.getClientCount() > 0) withClients++;
+                                }
+                                textSub.setText(elapsed + "s · " + snap.size() + " APs"
+                                        + " · " + withClients + " w/ clients"
+                                        + (hopCh > 0 ? (" · ch " + hopCh) : "")
+                                        + (untilStop ? " · Stop" : ""));
+                                if (channelValue != null) {
+                                    channelValue.setText(hopCh > 0 ? String.valueOf(hopCh) : "hop");
+                                }
+                                if (bandValue != null) {
+                                    if ("a".equals(bandFinal)) bandValue.setText("5");
+                                    else if ("bg".equals(bandFinal)) bandValue.setText("2.4");
+                                    else bandValue.setText("2.4 / 5");
+                                }
                                 if (!snap.isEmpty()) {
                                     list = snap;
                                     if (mainActivity != null) mainActivity.setNetworks(list);
-                                    mAdapter = new WiFIAdapter(context, activity, list);
+                                    mAdapter = new WiFIAdapter(context, activity, list, true);
                                     mAdapter.setHasStableIds(true);
                                     mRecyclerView.setAdapter(mAdapter);
                                     renderListState(true);
@@ -353,11 +463,32 @@ public class Wifi extends Fragment {
                     activeMonScan = null;
                     safeUi(() -> {
                         if (monStopBtn != null) monStopBtn.setVisibility(View.GONE);
+                        refreshMonitorToggleLabel();
                     });
-                    if (monList != null && !monList.isEmpty()) {
-                        list = monList;
+                    list = monList != null ? monList : new ArrayList<>();
+                } else {
+                    // Station: disable monitor first, then normal iw scan
+                    disableMonitorForStation();
+                    if (wlans.contains(wlan)) {
+                        if (!"wlan0".equals(wlan) && wlan.contains("mon")) {
+                            core.disableMonitorMode(wlan);
+                            wlan = wlan.replace("mon", "");
+                            core.customCommand("ip link set " + wlan + " up");
+                        } else if (!"wlan0".equals(wlan)) {
+                            core.customCommand("ip link set " + wlan + " up");
+                        }
+                    }
+                    list = new ScanWifi(wlan, core).execute().get();
+                    if (list == null) list = new ArrayList<>();
+                    while (list.isEmpty() && failedscancount < 5) {
+                        if (failedscancount == 4) break;
+                        failedscancount++;
+                        Thread.sleep(3000);
+                        list = new ScanWifi(wlan, core).execute().get();
+                        if (list == null) list = new ArrayList<>();
                     }
                 }
+
                 if (mainActivity != null) {
                     mainActivity.setNetworks(list);
                 }
@@ -373,18 +504,6 @@ public class Wifi extends Fragment {
                     }
                 }
                 if (list == null) list = new ArrayList<>();
-                while (list.isEmpty() && failedscancount < 5) {
-                    if (failedscancount == 4) {
-                        break;
-                    }
-                    failedscancount++;
-                    Thread.sleep(3000);
-                    list = new ScanWifi(wlan, core).execute().get();
-                }
-                if (list != null) {
-                    core.saveLastWifiScan(list);
-                    if (mainActivity != null) mainActivity.setNetworks(list);
-                }
 
                 for (int i = 0; i < list.size(); i++) {
                     String mac = list.get(i).getMac();
@@ -418,7 +537,8 @@ public class Wifi extends Fragment {
                         refresh.setRefreshing(false);
                     });
                 } else {
-                    mAdapter = new WiFIAdapter(context, activity, list);
+                    boolean sortClients = monitorScan;
+                    mAdapter = new WiFIAdapter(context, activity, list, sortClients);
                     mAdapter.setHasStableIds(true);
                     safeUi(() -> {
                         mRecyclerView.setItemViewCacheSize(64);
@@ -432,6 +552,7 @@ public class Wifi extends Fragment {
                             img.clearAnimation();
                         }
                         setScanIdleSubtitle();
+                        refreshMonitorToggleLabel();
                     });
                 }
             } catch (ExecutionException | InterruptedException e) {
@@ -468,6 +589,7 @@ public class Wifi extends Fragment {
         boolean has24 = false;
         boolean has5 = false;
         Set<Integer> channels = new HashSet<>();
+        int clientAps = 0;
         if (list != null) {
             for (WiFINetwork n : list) {
                 if (n.getIs5hhz()) {
@@ -476,14 +598,34 @@ public class Wifi extends Fragment {
                     has24 = true;
                 }
                 if (n.getChannel() > 0) channels.add(n.getChannel());
+                if (n.getClientCount() > 0) clientAps++;
             }
         }
         String band = "—";
-        if (has24 && has5) band = "2.4 / 5";
-        else if (has24) band = "2.4";
-        else if (has5) band = "5";
+        if (core.getBoolean("wifi_scan_monitor")) {
+            String b = core.getString("wifi_mon_band");
+            if ("a".equals(b)) band = "5";
+            else if ("bg".equals(b)) band = "2.4";
+            else if (has24 && has5) band = "2.4 / 5";
+            else if (has24) band = "2.4";
+            else if (has5) band = "5";
+            else band = "2.4 / 5";
+        } else {
+            if (has24 && has5) band = "2.4 / 5";
+            else if (has24) band = "2.4";
+            else if (has5) band = "5";
+        }
         bandValue.setText(band);
-        channelValue.setText(channels.isEmpty() ? "—" : String.valueOf(channels.size()));
+        if (channels.isEmpty()) {
+            channelValue.setText("—");
+        } else if (core.getBoolean("wifi_scan_monitor")) {
+            channelValue.setText(channels.size() + " ch");
+        } else {
+            channelValue.setText(String.valueOf(channels.size()));
+        }
+        if (core.getBoolean("wifi_scan_monitor") && subtitle != null && list != null && !list.isEmpty()) {
+            subtitle.setText(list.size() + " APs · " + clientAps + " with clients (sorted)");
+        }
     }
 
     private void pickWifiInterface() {

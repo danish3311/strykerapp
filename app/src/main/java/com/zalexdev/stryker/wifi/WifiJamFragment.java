@@ -146,8 +146,12 @@ public class WifiJamFragment extends Fragment {
             MaterialAlertDialogBuilder b = new MaterialAlertDialogBuilder(context)
                     .setTitle(mode.title)
                     .setMessage(mode.needsTarget
-                            ? "Pick a target from your last WiFi scan (required for this mode)."
-                            : "Target a specific AP from your last WiFi scan?")
+                            ? ("Pick target(s) from your last "
+                            + (core.getBoolean("wifi_scan_monitor") ? "monitor" : "station")
+                            + " WiFi scan (required).")
+                            : ("Target AP(s) from your last "
+                            + (core.getBoolean("wifi_scan_monitor") ? "monitor" : "station")
+                            + " WiFi scan?"))
                     .setPositiveButton("Pick from scan", (d, w) -> pickTargetFromScan(mode, mode.needsTarget))
                     .setNegativeButton(android.R.string.cancel, null);
             if (!mode.needsTarget) {
@@ -202,9 +206,12 @@ public class WifiJamFragment extends Fragment {
             return Integer.compare(a.getPower(), b.getPower());
         });
         if (nets.isEmpty()) {
+            boolean mon = core.getBoolean("wifi_scan_monitor");
             new MaterialAlertDialogBuilder(context)
                     .setTitle(mode.title)
-                    .setMessage("No WiFi scan data yet. Use Monitor + clients scan first, or enter manually.")
+                    .setMessage("No WiFi scan data yet. Run a "
+                            + (mon ? "Monitor + clients" : "Station")
+                            + " scan in WiFi Networks first, or enter manually.")
                     .setPositiveButton("Enter manually", (d, w) -> promptManual(mode, required))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
@@ -222,8 +229,9 @@ public class WifiJamFragment extends Fragment {
                     + (cc > 0 ? "  ·  " + cc + " clients" : "");
         }
 
+        String src = core.getBoolean("wifi_scan_monitor") ? "monitor scan" : "station scan";
         new MaterialAlertDialogBuilder(context)
-                .setTitle("Select target AP(s)")
+                .setTitle("Select target AP(s) · " + src)
                 .setMultiChoiceItems(labels, checked, (d, which, isChecked) -> checked[which] = isChecked)
                 .setPositiveButton("Attack selected", (d, w) -> {
                     ArrayList<WiFINetwork> selected = new ArrayList<>();
@@ -239,12 +247,16 @@ public class WifiJamFragment extends Fragment {
                                 null, null, -1, null);
                         return;
                     }
-                    if (selected.size() == 1) {
+                    // Deauth: always offer mdk4 vs aireplay (1 or many APs)
+                    if ("d".equals(mode.flag)) {
+                        pickEngineThenLaunch(mode, selected);
+                    } else if (selected.size() == 1) {
                         WiFINetwork n = selected.get(0);
                         launchMdk4(activity, context, core, mode.flag, mode.title,
                                 n.getMac(), n.getSsid(), n.getChannel(), null);
                     } else {
-                        pickEngineThenMulti(mode, selected);
+                        pickBurstThenMulti(mode.title + " · mdk4 ×" + selected.size(),
+                                selected, true, mode.flag);
                     }
                 })
                 .setNeutralButton("Enter manually…", (d, w) -> promptManual(mode, required))
@@ -252,27 +264,37 @@ public class WifiJamFragment extends Fragment {
                 .show();
     }
 
-    private void pickEngineThenMulti(Mode mode, ArrayList<WiFINetwork> selected) {
-        // aireplay only makes sense for deauth; other modes stay mdk4-only
-        if (!"d".equals(mode.flag)) {
-            pickBurstThenMulti(mode.title + " · mdk4 ×" + selected.size(), selected, true, mode.flag);
-            return;
-        }
+    /** Engine picker for deauth — works for 1 or many APs. */
+    private void pickEngineThenLaunch(Mode mode, ArrayList<WiFINetwork> selected) {
         new MaterialAlertDialogBuilder(context)
-                .setTitle("Attack engine · " + selected.size() + " APs")
+                .setTitle("Attack engine · " + selected.size() + " AP"
+                        + (selected.size() == 1 ? "" : "s"))
                 .setItems(new CharSequence[]{
                         "mdk4 (fast, recommended)",
                         "aireplay-ng (classic deauth)"
                 }, (d, which) -> {
-                    if (which == 1) {
-                        pickBurstThenMulti("aireplay · ×" + selected.size(), selected, false, "d");
-                    } else {
+                    boolean useMdk4 = which != 1;
+                    if (selected.size() == 1 && useMdk4) {
+                        WiFINetwork n = selected.get(0);
+                        launchMdk4(activity, context, core, mode.flag, mode.title,
+                                n.getMac(), n.getSsid(), n.getChannel(), null);
+                    } else if (selected.size() == 1) {
+                        // Single AP aireplay via multi session (1 target)
+                        pickBurstThenMulti("aireplay · " + selected.get(0).getSsid(),
+                                selected, false, "d");
+                    } else if (useMdk4) {
                         pickBurstThenMulti(mode.title + " · mdk4 ×" + selected.size(),
                                 selected, true, mode.flag);
+                    } else {
+                        pickBurstThenMulti("aireplay · ×" + selected.size(), selected, false, "d");
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private void pickEngineThenMulti(Mode mode, ArrayList<WiFINetwork> selected) {
+        pickEngineThenLaunch(mode, selected);
     }
 
     /** Ask how long each AP burst should run (persisted). */

@@ -1121,15 +1121,24 @@ public class Core {
         if (networks != null) {
             for (com.zalexdev.stryker.custom.WiFINetwork n : networks) {
                 if (n == null || n.getMac() == null || n.getMac().isEmpty()) continue;
-                // bssid\tssid\tchannel\tpower\tclients
+                StringBuilder clients = new StringBuilder();
+                if (n.getClients() != null) {
+                    for (int i = 0; i < n.getClients().size(); i++) {
+                        if (i > 0) clients.append(',');
+                        clients.append(n.getClients().get(i));
+                    }
+                }
+                // bssid\tssid\tchannel\tpower\tclients\tclientMacs
                 rows.add(n.getMac() + "\t"
                         + (n.getSsid() == null ? "" : n.getSsid().replace('\t', ' '))
                         + "\t" + n.getChannel()
                         + "\t" + n.getPower()
-                        + "\t" + n.getClientCount());
+                        + "\t" + n.getClientCount()
+                        + "\t" + clients);
             }
         }
         putListString("last_wifi_scan", rows);
+        putBoolean("last_wifi_scan_monitor", getBoolean("wifi_scan_monitor"));
     }
 
     public ArrayList<com.zalexdev.stryker.custom.WiFINetwork> getLastWifiScan() {
@@ -1150,6 +1159,14 @@ public class Core {
             if (p.length > 4) {
                 try { n.setClientCount(Integer.parseInt(p[4])); } catch (Exception ignored) {}
             }
+            if (p.length > 5 && p[5] != null && !p[5].isEmpty()) {
+                ArrayList<String> macs = new ArrayList<>();
+                for (String m : p[5].split(",")) {
+                    if (m != null && m.contains(":")) macs.add(m.trim().toLowerCase());
+                }
+                if (!macs.isEmpty()) n.setClients(macs);
+            }
+            if (n.getChannel() >= 36) n.setIs5hhz(true);
             out.add(n);
         }
         return out;
