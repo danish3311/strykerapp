@@ -229,14 +229,34 @@ public class Wifi extends Fragment {
                 if (monOptions != null) {
                     monOptions.setVisibility(isMon ? View.VISIBLE : View.GONE);
                 }
+                // Clear cached station/monitor list so the other mode never shows stale results
+                clearScanResultsUi(isMon
+                        ? "Monitor mode — pull to scan for APs + clients"
+                        : "Station mode — pull to scan");
                 if (!isMon) {
-                    // Leaving monitor scan mode — put iface back to station
                     new Thread(this::disableMonitorForStation).start();
                 }
                 refreshMonitorToggleLabel();
             });
         }
         return view;
+    }
+
+    /** Drop in-memory/persisted list display when switching scan modes. */
+    private void clearScanResultsUi(String subtitleMsg) {
+        list = new ArrayList<>();
+        if (mainActivity != null) mainActivity.setNetworks(list);
+        try { core.saveLastWifiScan(list); } catch (Exception ignored) {}
+        if (mRecyclerView != null) mRecyclerView.setAdapter(null);
+        mAdapter = null;
+        renderListState(false);
+        if (countChip != null) countChip.setText("0");
+        if (text1 != null) text1.setText(R.string.wifi_empty_title);
+        if (textSub != null) textSub.setText(subtitleMsg != null ? subtitleMsg : "");
+        if (subtitle != null) subtitle.setText(subtitleMsg != null ? subtitleMsg : "");
+        if (statusValue != null) statusValue.setText(R.string.wifi_status_ready);
+        if (channelValue != null) channelValue.setText("—");
+        if (fab != null) fab.hide();
     }
 
     private void updateMonDurationLabel() {
@@ -419,7 +439,14 @@ public class Wifi extends Fragment {
                     String band = core.getString("wifi_mon_band");
                     if (band == null || band.isEmpty()) band = "abg";
                     final String bandFinal = band;
+                    // Clear station cache immediately so UI never shows old APs as "monitor"
                     safeUi(() -> {
+                        list = new ArrayList<>();
+                        if (mainActivity != null) mainActivity.setNetworks(list);
+                        if (mRecyclerView != null) mRecyclerView.setAdapter(null);
+                        mAdapter = null;
+                        renderListState(false);
+                        countChip.setText("0");
                         text1.setText("Monitor scan…");
                         textSub.setText(untilStop
                                 ? "Hopping channels — tap Stop when done"
@@ -449,14 +476,20 @@ public class Wifi extends Fragment {
                                     else if ("bg".equals(bandFinal)) bandValue.setText("2.4");
                                     else bandValue.setText("2.4 / 5");
                                 }
+                                list = snap;
+                                if (mainActivity != null) mainActivity.setNetworks(list);
+                                countChip.setText(String.valueOf(list.size()));
                                 if (!snap.isEmpty()) {
-                                    list = snap;
-                                    if (mainActivity != null) mainActivity.setNetworks(list);
                                     mAdapter = new WiFIAdapter(context, activity, list, true);
                                     mAdapter.setHasStableIds(true);
                                     mRecyclerView.setAdapter(mAdapter);
                                     renderListState(true);
-                                    countChip.setText(String.valueOf(list.size()));
+                                } else {
+                                    renderListState(false);
+                                    text1.setText("Monitor scan…");
+                                    if (textSub != null && !textSub.getText().toString().contains("APs")) {
+                                        // keep progress line above
+                                    }
                                 }
                             }));
                     ArrayList<WiFINetwork> monList = activeMonScan.run();
