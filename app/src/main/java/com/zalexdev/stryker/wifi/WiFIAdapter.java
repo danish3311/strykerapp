@@ -1361,9 +1361,9 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                     if (network.getClients() != null) {
                         for (String c : network.getClients()) {
                             if (c == null) continue;
-                            String mac = c.trim().toLowerCase(Locale.US);
-                            if (mac.contains(":") && !liveClients.contains(mac)) {
-                                liveClients.add(mac);
+                            String clientMac = c.trim().toLowerCase(Locale.US);
+                            if (clientMac.contains(":") && !liveClients.contains(clientMac)) {
+                                liveClients.add(clientMac);
                             }
                         }
                     }
