@@ -1,6 +1,5 @@
 package com.zalexdev.stryker.localnetwork;
 
-
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Dialog;
@@ -64,7 +63,6 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutionException;
 
-
 public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> {
     public Context context;
     public Activity activity;
@@ -76,7 +74,6 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
     public String dialogip = "";
     public boolean hotspot = false;
     public String venomlist = "windows apk powershell python linux php perl tomcat osx java bash asp aspx";
-
 
     public LocalAdapter(Context context2, Activity mActivity, ArrayList<Device> devs) {
         context = context2;
@@ -92,7 +89,7 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
         return new ViewHolder(v);
     }
 
-    @SuppressLint({"UseCompatLoadingForDrawables", "SetTextI18n"})
+    @SuppressLint({ "UseCompatLoadingForDrawables", "SetTextI18n" })
     @Override
     public void onBindViewHolder(@NonNull ViewHolder adapter, @SuppressLint("RecyclerView") final int position) {
         Device device = devices.get(position);
@@ -186,19 +183,24 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             return Color.parseColor("#AB47BC");
         }
         String os = device.getOs() == null ? "" : device.getOs().toLowerCase(Locale.ROOT);
-        if (os.contains("windows")) return Color.parseColor("#1565C0");
-        if (os.contains("linux")) return Color.parseColor("#EF6C00");
+        if (os.contains("windows"))
+            return Color.parseColor("#1565C0");
+        if (os.contains("linux"))
+            return Color.parseColor("#EF6C00");
         if (os.contains("mac") || os.contains("ios") || os.contains("apple"))
             return Color.parseColor("#5E35B1");
-        if (os.contains("android")) return Color.parseColor("#2E7D32");
-        if (os.contains("camera")) return Color.parseColor("#00897B");
-        if (os.contains("printer")) return Color.parseColor("#3949AB");
+        if (os.contains("android"))
+            return Color.parseColor("#2E7D32");
+        if (os.contains("camera"))
+            return Color.parseColor("#00897B");
+        if (os.contains("printer"))
+            return Color.parseColor("#3949AB");
         return ContextCompat.getColor(context, R.color.grey);
     }
 
     public void netcutdialog(Device d, int pos) {
         if (pos != 0) {
-            String[] types = new String[]{
+            String[] types = new String[] {
                     context.getString(R.string.cut_dev),
                     context.getString(R.string.perm_cut),
                     context.getString(R.string.cut20),
@@ -207,7 +209,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             new MaterialAlertDialogBuilder(context)
                     .setTitle(context.getString(R.string.local_netcut_choose))
                     .setItems(types, (dialogInterface, i) -> {
-                        if (dialog != null) dialog.dismiss();
+                        if (dialog != null)
+                            dialog.dismiss();
                         String target = d.getIp();
                         String gw = devices.get(0).getIp();
                         String cmd = "";
@@ -215,10 +218,12 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                             core.getLogger().writeLine("Cutting network connection to " + target + " from " + gw, 1);
                             cmd = " python3 /CORE/MegaCut/megacut.py " + target + " " + gw + " -k";
                         } else if (i == 1) {
-                            core.getLogger().writeLine("HARD cutting network connection to " + target + " from " + gw, 1);
+                            core.getLogger().writeLine("HARD cutting network connection to " + target + " from " + gw,
+                                    1);
                             cmd = " python3 /CORE/MegaCut/megacut.py " + target + " " + gw + " -m";
                         } else if (i == 2) {
-                            core.getLogger().writeLine("Cutting network connection (20s) to " + target + " from " + gw, 1);
+                            core.getLogger().writeLine("Cutting network connection (20s) to " + target + " from " + gw,
+                                    1);
                             cmd = " python3 /CORE/MegaCut/megacut.py " + target + " " + gw + " -b";
                         } else {
                             core.getLogger().writeLine("Enabling connection to " + target + " from " + gw, 1);
@@ -264,7 +269,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                         }
                         cmd.append(" ").append(devices.get(0).getIp()).append(" -k");
                         new Thread(() -> core.customChrootCommand(cmd.toString())).start();
-                        if (dialog != null) dialog.dismiss();
+                        if (dialog != null)
+                            dialog.dismiss();
                     })
                     .setNegativeButton(R.string.no, (di, i) -> di.dismiss()).show();
         } else {
@@ -289,14 +295,16 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                         }
                         cmd.append(" ").append(devices.get(0).getIp()).append(" -r");
                         new Thread(() -> core.customChrootCommand(cmd.toString())).start();
-                        if (dialog != null) dialog.dismiss();
+                        if (dialog != null)
+                            dialog.dismiss();
                     })
                     .setNegativeButton(R.string.no, (di, i) -> di.dismiss()).show();
         }
     }
 
     private void runexploits(ArrayList<Exploit> exploits) {
-        if (exploits == null || exploits.isEmpty()) return;
+        if (exploits == null || exploits.isEmpty())
+            return;
         final Dialog dialog = new Dialog(context);
         dialog.setContentView(R.layout.exploit_dialog);
         Window window = dialog.getWindow();
@@ -316,8 +324,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
         terminal.setMovementMethod(new android.text.method.ScrollingMovementMethod());
 
         final int total = exploits.size();
-        final int[] done = {0};
-        final int[] success = {0};
+        final int[] done = { 0 };
+        final int[] success = { 0 };
         final java.util.List<String> hits = java.util.Collections.synchronizedList(new ArrayList<>());
 
         setText(subtitle, context.getString(R.string.arsenal_run_batch_summary_running, 0, total));
@@ -386,12 +394,14 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
     }
 
     private void autoScrollTerminal(TextView terminal, android.widget.ScrollView scroll) {
-        if (terminal == null || scroll == null) return;
+        if (terminal == null || scroll == null)
+            return;
         scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
     public void smoothScrool(TextView outputtext) {
-        if (outputtext.getLayout() == null) return;
+        if (outputtext.getLayout() == null)
+            return;
         final int scrollAmount = outputtext.getLayout().getLineTop(outputtext.getLineCount()) - outputtext.getHeight();
         outputtext.scrollTo(0, Math.max(scrollAmount, 0));
     }
@@ -416,7 +426,7 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
     private void _unusedLegacyGeneratePayload() {
         final Dialog dialog = new Dialog(context);
         dialog.setContentView(R.layout.msfgenerate_dialog);
-        final AdvancedProcess[] msfpc = {null};
+        final AdvancedProcess[] msfpc = { null };
         Window window = dialog.getWindow();
         if (window != null) {
             window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -440,7 +450,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             shimmer.showShimmer(true);
             prog.setIndeterminate(true);
             prog.setVisibility(View.VISIBLE);
-            msfpc[0] = new AdvancedProcess(activity, context, "msfpc " + payload.getText().toString() + " " + ip.getText().toString() + " " + port.getText().toString(), true) {
+            msfpc[0] = new AdvancedProcess(activity, context, "msfpc " + payload.getText().toString() + " "
+                    + ip.getText().toString() + " " + port.getText().toString(), true) {
                 @Override
                 public void onFinished(ArrayList<String> outputList) {
                     prog.setVisibility(View.GONE);
@@ -454,8 +465,11 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                     if (line.contains("created:")) {
                         new Thread(() -> {
                             core.createFolder("/sdcard/Stryker/payloads");
-                            String path = line.replaceAll(".*:", "").replace("'[01;33m//", "").replace("[00m'", "").replaceAll("\\s+", "").trim();
-                            core.customChrootCommand("cp " + path + " /sdcard/Stryker/payloads/" + path.split("/")[path.split("/").length - 1].replaceAll(".*\\.", name.getText().toString() + "."));
+                            String path = line.replaceAll(".*:", "").replace("'[01;33m//", "").replace("[00m'", "")
+                                    .replaceAll("\\s+", "").trim();
+                            core.customChrootCommand("cp " + path + " /sdcard/Stryker/payloads/"
+                                    + path.split("/")[path.split("/").length - 1].replaceAll(".*\\.",
+                                            name.getText().toString() + "."));
                         }).start();
                     }
                 }
@@ -494,7 +508,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             bitdialog();
             return;
         }
-        if (!type.equals("Admin")) return;
+        if (!type.equals("Admin"))
+            return;
 
         image.setAnimation(R.raw.router);
         title.setText(R.string.rs);
@@ -549,40 +564,62 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
         prog.setVisibility(View.VISIBLE);
         setProg(prog, 20);
         dialog.show();
-        final String[] username = {""};
-        final String[] password = {""};
-        cameradar = new AdvancedProcess(activity, context, "radar -c  /CORE/Cameradar/credentials.json -r /CORE/Cameradar/routes -t " + ip, true) {
+        final String[] username = { "" };
+        final String[] password = { "" };
+        cameradar = new AdvancedProcess(activity, context,
+                "radar -c /CORE/Cameradar/credentials.json -r /CORE/Cameradar/routes -t " + ip, true) {
             @Override
             public void onFinished(ArrayList<String> outputList) {
-                kill();
+                // Also scan outputList (includes stderr lines prefixed with "[E] ") for
+                // credentials
+                for (String l : outputList) {
+                    String stripped = l.startsWith("[E] ") ? l.substring(4) : l;
+                    if (stripped.contains("Username:") && !stripped.contains("not found")) {
+                        success = true;
+                        if (username[0].isEmpty())
+                            username[0] = stripped.replace("Username:", "").trim();
+                    }
+                    if (stripped.contains("Password:") && !stripped.contains("not found")) {
+                        success = true;
+                        if (password[0].isEmpty())
+                            password[0] = stripped.replace("Password:", "").trim();
+                    }
+                    if (stripped.contains("This camera does not require authentication"))
+                        success = true;
+                }
+                // onFinished is already on UI thread — update views directly
                 if (!success) {
-                    setText(progress, "No credentials found");
+                    progress.setText("No credentials found");
                     setProgColor(prog, image, 1);
                 } else {
-                    setText(progress, "Credentials found\nUsername: " + username[0] + "\nPassword: " + password[0]);
+                    progress.setText("Credentials found\nUsername: " + username[0] + "\nPassword: " + password[0]);
                     setProgColor(prog, image, 2);
                 }
-                setProg(prog, 100);
-                setText(cancel, context.getString(android.R.string.ok));
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    prog.setProgress(100, true);
+                }
+                cancel.setText(context.getString(android.R.string.ok));
             }
 
             @Override
             public void onNewLine(String line) {
+                // onNewLine runs on UI thread (via AdvancedProcess.runOnUiThread)
                 progress.setText(line);
-                if (line.contains("Username:")) {
-                    username[0] = line.replace("Username:", "");
+                if (line.contains("Username:") && !line.contains("not found")) {
+                    username[0] = line.replace("Username:", "").trim();
+                    success = true;
                 }
-                if (line.contains("Password:")) {
-                    password[0] = line.replace("Password:", "");
+                if (line.contains("Password:") && !line.contains("not found")) {
+                    password[0] = line.replace("Password:", "").trim();
+                    success = true;
                 }
-                onEvent(line);
+                if (line.contains("This camera does not require authentication"))
+                    success = true;
             }
 
             @Override
             public void onEvent(String line) {
-                if (line.contains("Username:") && !line.contains("not found")) success = true;
-                if (line.contains("Password:") && !line.contains("not found")) success = true;
-                if (line.contains("This camera does not require authentication")) success = true;
+                // Legacy hook — logic moved to onNewLine / onFinished
             }
         };
         AdvancedProcess finalCameradar = cameradar;
@@ -602,7 +639,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
 
     public void getPort(String type, ArrayList<String> ports, String ip) {
         port = "";
-        if (ports.isEmpty()) return;
+        if (ports.isEmpty())
+            return;
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(R.string.coose_port);
         String[] port_list = ports.toArray(new String[0]);
@@ -625,7 +663,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
 
     public void selectPort(ArrayList<String> ports) {
         port = "";
-        if (ports.isEmpty()) return;
+        if (ports.isEmpty())
+            return;
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(R.string.coose_port);
         String[] port_list = ports.toArray(new String[0]);
@@ -728,7 +767,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             vulncheck.add(core.getExploitByTitle("Bluekeep"));
             vulncheck.add(core.getExploitByTitle("CVE-2022-27255"));
             for (int i = 0; i < vulncheck.size(); i++) {
-                if (vulncheck.get(i) == null) continue;
+                if (vulncheck.get(i) == null)
+                    continue;
                 vulncheck.get(i).setIp(device.getIp());
             }
             if (vulncheck.get(3) != null) {
@@ -736,12 +776,13 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             }
             ArrayList<Exploit> filtered = new ArrayList<>();
             for (Exploit e : vulncheck) {
-                if (e != null) filtered.add(e);
+                if (e != null)
+                    filtered.add(e);
             }
             runexploits(filtered);
         });
-        nmap.setOnClickListener(view ->
-                activity.startService(new Intent(activity, NmapReportGenerator.class).putExtra("ip", device.getIp())));
+        nmap.setOnClickListener(view -> activity
+                .startService(new Intent(activity, NmapReportGenerator.class).putExtra("ip", device.getIp())));
         camera.setOnClickListener(view -> radarDialog(device.getIp()));
         admin.setOnClickListener(view -> getPort("Admin", device.portsToString(), device.getIp()));
         netcut.setOnClickListener(view -> netcutdialog(device, position));
@@ -773,7 +814,7 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                     Exploit exploit = core.getExploits().get(i);
                     exploit.setIp(device.getIp());
                     exploit.setGw(getGateway());
-                    final String[] cmd = {exploit.genereteLaunchCommand()};
+                    final String[] cmd = { exploit.genereteLaunchCommand() };
                     if (exploit.getRequireArgs().size() > 0) {
                         new Thread(() -> {
                             for (String req : exploit.getRequireArgs()) {
@@ -783,7 +824,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                                     Window vw = valuedialog.getWindow();
                                     if (vw != null) {
                                         vw.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                                        vw.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                                        vw.setLayout(LinearLayout.LayoutParams.MATCH_PARENT,
+                                                LinearLayout.LayoutParams.WRAP_CONTENT);
                                     }
                                     TextView title = valuedialog.findViewById(R.id.title);
                                     TextInputEditText valueedit = valuedialog.findViewById(R.id.value);
@@ -793,7 +835,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                                     valuedialog.setCancelable(false);
                                     title.setText("[" + exploit.getTitle() + "] Enter " + req);
                                     ok.setOnClickListener(view1 -> {
-                                        cmd[0] = cmd[0].replace("{" + req + "}", Objects.requireNonNull(valueedit.getText()).toString());
+                                        cmd[0] = cmd[0].replace("{" + req + "}",
+                                                Objects.requireNonNull(valueedit.getText()).toString());
                                         exploit.setCommand(cmd[0]);
                                         valuedialog.dismiss();
                                     });
@@ -807,17 +850,21 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
                                     e.printStackTrace();
                                 }
                                 if (!cmd[0].contains("{")) {
-                                    activity.runOnUiThread(() -> runexploits(new ArrayList<Exploit>() {{
-                                        add(exploit);
-                                    }}));
+                                    activity.runOnUiThread(() -> runexploits(new ArrayList<Exploit>() {
+                                        {
+                                            add(exploit);
+                                        }
+                                    }));
                                     break;
                                 }
                             }
                         }).start();
                     } else {
-                        runexploits(new ArrayList<Exploit>() {{
-                            add(exploit);
-                        }});
+                        runexploits(new ArrayList<Exploit>() {
+                            {
+                                add(exploit);
+                            }
+                        });
                     }
                     dialog.dismiss();
                 });
@@ -830,7 +877,7 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
     }
 
     public void showPorts2(Device device) {
-        final boolean[] nmap = {false};
+        final boolean[] nmap = { false };
         final Dialog dialog = new Dialog(activity);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setCancelable(true);
@@ -880,7 +927,6 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
         });
         dialog.show();
     }
-
 
     @Override
     public int getItemCount() {
@@ -1005,12 +1051,15 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
     }
 
     public String getGateway() {
-        if (context == null) return "";
+        if (context == null)
+            return "";
         WifiManager wifiManager = (WifiManager) context.getApplicationContext()
                 .getSystemService(Context.WIFI_SERVICE);
-        if (wifiManager == null) return "";
+        if (wifiManager == null)
+            return "";
         DhcpInfo dhcp = wifiManager.getDhcpInfo();
-        if (dhcp == null) return "";
+        if (dhcp == null)
+            return "";
         return intToIP(dhcp.gateway);
     }
 
@@ -1044,7 +1093,8 @@ public class LocalAdapter extends RecyclerView.Adapter<LocalAdapter.ViewHolder> 
             socket.send(packet);
         } catch (Exception ignored) {
         } finally {
-            if (socket != null) socket.close();
+            if (socket != null)
+                socket.close();
         }
     }
 

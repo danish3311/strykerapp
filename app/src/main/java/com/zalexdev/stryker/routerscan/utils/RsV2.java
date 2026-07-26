@@ -29,9 +29,7 @@ public class RsV2 extends AsyncTask<Void, String, Router> {
     public String ip;
     public Process proc;
 
-
     TextView textprg;
-
 
     public RsV2(Activity activity, Context context, TextView text, String ip1) {
         core = new Core(context);
@@ -63,9 +61,12 @@ public class RsV2 extends AsyncTask<Void, String, Router> {
             OutputStream stdin = proc.getOutputStream();
             InputStream stderr = proc.getErrorStream();
             InputStream stdout = proc.getInputStream();
-            String cmd = "rs " + ip +" /sdcard/Stryker/rs/auth_basic.txt /sdcard/Stryker/rs/auth_digest.txt /sdcard/Stryker/rs/auth_form.txt";
-            stdin.write((exec + "'" + cmd + "'" + '\n').getBytes());
-            stdin.write(("\n").getBytes());
+            String cmd = "rs " + ip
+                    + " /sdcard/Stryker/rs/auth_basic.txt /sdcard/Stryker/rs/auth_digest.txt /sdcard/Stryker/rs/auth_form.txt";
+            // Open ash shell inside chroot then send command
+            stdin.write((exec + "'ash'\n").getBytes());
+            stdin.write((cmd + "\n").getBytes());
+            stdin.write(("exit\n").getBytes());
             stdin.flush();
             stdin.close();
             ArrayList<String> out2 = new ArrayList<>();
@@ -83,7 +84,6 @@ public class RsV2 extends AsyncTask<Void, String, Router> {
                 RouterScanLog.append(mContext, ip, "ERR", line);
                 onProgressUpdate(line);
             }
-
 
             br.close();
             proc.waitFor();
@@ -118,10 +118,9 @@ public class RsV2 extends AsyncTask<Void, String, Router> {
                 setText(textprg, "Bruting... (" + percent + "%)");
             }
         } else if (values[0].contains("Status")) {
-            setText(textprg, values[0].replace("Status: ",""));
+            setText(textprg, values[0].replace("Status: ", ""));
         }
     }
-
 
     public Router rs_result(ArrayList<String> output) {
         Router result = new Router();
@@ -148,8 +147,8 @@ public class RsV2 extends AsyncTask<Void, String, Router> {
             } else if (temp.contains("Title:")) {
                 String title = temp.replace("Title: ", "");
                 result.setTitle(title);
-            } else if (temp.contains("BSSID:")){
-                String mac = temp.replace("BSSID: ","");
+            } else if (temp.contains("BSSID:")) {
+                String mac = temp.replace("BSSID: ", "");
                 result.setBssid(mac);
             }
             if (result.getSuccess()) {
@@ -178,5 +177,3 @@ public class RsV2 extends AsyncTask<Void, String, Router> {
     }
 
 }
-
-

@@ -14,7 +14,8 @@ import java.util.ArrayList;
 
 public final class RsRunner {
 
-    private RsRunner() { }
+    private RsRunner() {
+    }
 
     public static Router run(Context ctx, String ip) {
         AuthLists.ensureDeployed(ctx);
@@ -33,8 +34,10 @@ public final class RsRunner {
                     + " /sdcard/Stryker/rs/auth_basic.txt"
                     + " /sdcard/Stryker/rs/auth_digest.txt"
                     + " /sdcard/Stryker/rs/auth_form.txt";
-            stdin.write((Core.EXECUTE + "'" + cmd + "'" + '\n').getBytes());
-            stdin.write("\n".getBytes());
+            // Open ash shell inside chroot then send command
+            stdin.write((Core.EXECUTE + "'ash'\n").getBytes());
+            stdin.write((cmd + "\n").getBytes());
+            stdin.write(("exit\n").getBytes());
             stdin.flush();
             stdin.close();
 
@@ -58,7 +61,10 @@ public final class RsRunner {
             Log.d("RsRunner", "rs " + ip + " failed: " + e.getMessage());
         } finally {
             if (proc != null) {
-                try { proc.destroy(); } catch (Exception ignored) { }
+                try {
+                    proc.destroy();
+                } catch (Exception ignored) {
+                }
             }
         }
         return r;
